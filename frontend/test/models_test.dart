@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:airguard_ai/features/environmental_intelligence/domain/models/observation_model.dart';
 import 'package:airguard_ai/features/environmental_intelligence/domain/models/risk_assessment_model.dart';
+import 'package:airguard_ai/features/environmental_intelligence/domain/models/station_model.dart';
 
 void main() {
   group('Domain Models Serialization', () {
@@ -28,7 +29,53 @@ void main() {
       expect(obs.dataSourceType, 'DEMO_FIXTURE');
     });
 
-    test('AssessmentResponse parses aqi and risk assessment properly', () {
+    test('MonitoringStationSummary parses correctly from json', () {
+      final json = {
+        'station_id': 'OPENAQ-1234',
+        'station_name': 'Anand Vihar CAAQMS',
+        'provider': 'OpenAQ Global Network',
+        'location': {
+          'latitude': 28.6508,
+          'longitude': 77.3152,
+          'city': 'Delhi',
+          'country': 'India',
+        },
+        'distance_km': 3.42,
+        'available_pollutants': ['PM2.5', 'PM10', 'NO2', 'CO'],
+        'data_source_type': 'LIVE',
+        'is_active': true,
+        'last_reported_at': '2026-11-15T11:00:00Z',
+      };
+
+      final st = MonitoringStationSummary.fromJson(json);
+      expect(st.stationId, 'OPENAQ-1234');
+      expect(st.stationName, 'Anand Vihar CAAQMS');
+      expect(st.distanceKm, 3.42);
+      expect(st.availablePollutants.length, 4);
+      expect(st.dataSourceType, 'LIVE');
+    });
+
+    test('ProviderStatusItem parses correctly from json', () {
+      final json = {
+        'name': 'openaq',
+        'display_name': 'OpenAQ v3',
+        'status': 'ONLINE',
+        'requires_api_key': true,
+        'is_authenticated': true,
+        'primary_data_type': 'LIVE',
+        'supported_pollutants': ['PM2.5', 'PM10'],
+        'attribution': 'OpenAQ Community',
+        'last_check_timestamp': '2026-11-15T11:30:00Z',
+        'latency_ms': 142.5,
+      };
+
+      final p = ProviderStatusItem.fromJson(json);
+      expect(p.name, 'openaq');
+      expect(p.status, 'ONLINE');
+      expect(p.latencyMs, 142.5);
+    });
+
+    test('AssessmentResponse parses aqi, risk assessment, and station properly', () {
       final json = {
         'aqi_result': {
           'standard': 'CPCB_INDIA',
@@ -61,6 +108,8 @@ void main() {
           'activity_recommendations': [],
           'disclaimer': 'Informational risk calculation only.',
         },
+        'distance_from_query_km': 4.2,
+        'data_freshness_minutes': 25.0,
       };
 
       final assessment = AssessmentResponse.fromJson(json);
@@ -68,6 +117,8 @@ void main() {
       expect(assessment.aqiResult.category, 'Poor');
       expect(assessment.riskAssessment.riskScore, 68);
       expect(assessment.riskAssessment.riskLevel, 'HIGH');
+      expect(assessment.distanceFromQueryKm, 4.2);
+      expect(assessment.dataFreshnessMinutes, 25.0);
     });
   });
 }

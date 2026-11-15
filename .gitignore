@@ -12,8 +12,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -30,9 +28,12 @@ venv/
 .venv/
 ENV/
 env/
+backend/venv/
+backend/.pytest_cache/
 .pytest_cache/
 .coverage
 htmlcov/
+airguard.db
 
 # Flutter / Dart
 .dart_tool/
