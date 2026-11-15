@@ -17,6 +17,13 @@ class ApiConstants {
   static const String airHistory = '/api/v1/air/history';
   static const String providersStatus = '/api/v1/air/providers/status';
 
+  // Milestone 3 Forecasting & AI Explanation endpoints
+  static const String forecastCurrent = '/api/v1/forecast/current';
+  static const String forecastAccuracy = '/api/v1/forecast/accuracy';
+  static const String forecastModelStatus = '/api/v1/forecast/model/status';
+  static const String aiExplain = '/api/v1/ai/explain';
+  static const String historyAvailability = '/api/v1/history/availability';
+
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
 }

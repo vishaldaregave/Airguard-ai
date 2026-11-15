@@ -9,6 +9,8 @@ import '../widgets/pollutant_grid_card.dart';
 import '../widgets/exposure_risk_meter.dart';
 import '../widgets/health_advisory_card.dart';
 import '../widgets/provider_status_sheet.dart';
+import '../widgets/forecast_chart_card.dart';
+import '../widgets/ai_explanation_card.dart';
 import 'station_selector_sheet.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -296,6 +298,24 @@ class DashboardScreen extends ConsumerWidget {
             _buildMeteorologyStrip(currentObs),
             const SizedBox(height: 14),
           ],
+
+          // AI Atmospheric Explainer Card (Milestone 3)
+          AIExplanationCard(
+            explanation: state.aiExplanation,
+            isLoading: state.isAILoading,
+            onRefresh: () => controller.refreshCurrent(),
+          ),
+          const SizedBox(height: 14),
+
+          // Multi-Horizon Air Quality Forecast Card (Milestone 3)
+          ForecastChartCard(
+            forecast: state.forecast,
+            currentAqi: assessment.aqiResult,
+            selectedHorizon: state.selectedHorizonHours,
+            isLoading: state.isForecastLoading,
+            onHorizonSelected: (h) => controller.selectForecastHorizon(h),
+          ),
+          const SizedBox(height: 14),
 
           // Explainable Exposure Risk Meter
           ExposureRiskMeter(riskAssessment: assessment.riskAssessment),

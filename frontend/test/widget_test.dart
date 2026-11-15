@@ -8,6 +8,8 @@ import 'package:airguard_ai/features/environmental_intelligence/domain/models/ob
 import 'package:airguard_ai/features/environmental_intelligence/domain/models/aqi_result_model.dart';
 import 'package:airguard_ai/features/environmental_intelligence/domain/models/risk_assessment_model.dart';
 import 'package:airguard_ai/features/environmental_intelligence/domain/models/station_model.dart';
+import 'package:airguard_ai/features/environmental_intelligence/domain/models/forecast_model.dart';
+import 'package:airguard_ai/features/environmental_intelligence/domain/models/ai_explanation_model.dart';
 
 class MockLocationService extends LocationService {
   @override
@@ -115,6 +117,81 @@ class MockEnvironmentalRepository extends EnvironmentalRepository {
   }
 
   @override
+  Future<ForecastCurrentResponse> getForecast({
+    String? stationId,
+    double? lat,
+    double? lon,
+  }) async {
+    return ForecastCurrentResponse(
+      status: 'ACTIVE',
+      stationId: 'TEST-001',
+      stationName: 'Test Monitoring Station [LIVE]',
+      dataSourceType: 'PHYSICAL_STATION',
+      baseTimestamp: DateTime(2026, 11, 15, 12, 0),
+      forecasts: [
+        HorizonForecastStep(
+          horizonHours: 1,
+          targetTimestamp: DateTime(2026, 11, 15, 13, 0),
+          predictedAqi: 245,
+          predictedAqiCategory: 'Poor',
+          predictedAqiColor: '#FF9900',
+          predictedAqiProminentPollutant: 'PM2.5',
+          isCpcbAqiValid: true,
+          pollutantPredictions: {
+            'PM2.5': PollutantPrediction(
+              pollutant: 'PM2.5',
+              unit: 'µg/m³',
+              predictedValue: 125.0,
+              ci95Lower: 105.0,
+              ci95Upper: 145.0,
+              ci90Lower: 110.0,
+              ci90Upper: 140.0,
+            ),
+          },
+        ),
+        HorizonForecastStep(
+          horizonHours: 3,
+          targetTimestamp: DateTime(2026, 11, 15, 15, 0),
+          predictedAqi: 255,
+          predictedAqiCategory: 'Poor',
+          isCpcbAqiValid: true,
+          pollutantPredictions: {},
+        ),
+      ],
+      modelMetadata: ForecastModelMetadata(
+        modelType: 'AUTOREGRESSIVE_RIDGE',
+        trainingSampleCount: 72,
+        maePm25: 11.2,
+        rmsePm25: 15.6,
+      ),
+      disclaimer: 'Statistical forecast. Real conditions may deviate.',
+    );
+  }
+
+  @override
+  Future<AIExplanationResponse> getAIExplanation({
+    required AssessmentResponse assessment,
+    int? historical24hAvgAqi,
+  }) async {
+    return AIExplanationResponse(
+      status: 'SUCCESS',
+      providerUsed: 'deterministic_expert_system',
+      stationName: 'Test Monitoring Station',
+      observationTimestamp: DateTime(2026, 11, 15, 12, 0),
+      overallAqi: 240,
+      aqiCategory: 'Poor',
+      prominentPollutant: 'PM2.5',
+      atmosphericDynamics: 'Boundary layer thermal compression trapping ground particulates.',
+      primaryDriverAnalysis: 'Fine Particulate Matter (PM2.5) dominates the observed loading.',
+      elevationCauses: 'Low nocturnal wind dispersion under steady surface pressure.',
+      activityImplications: 'Sensitive groups should limit prolonged outdoor exertion.',
+      practicalPrecautions: 'Use certified N95 masks for outdoor commutes.',
+      historicalComparison: 'Air quality is within normal bounds for this seasonal window.',
+      disclaimer: 'Informational synthesis only. Does not constitute clinical advice.',
+    );
+  }
+
+  @override
   Future<List<ProviderStatusItem>> getProvidersStatus() async {
     return [
       ProviderStatusItem(
@@ -134,7 +211,7 @@ class MockEnvironmentalRepository extends EnvironmentalRepository {
 }
 
 void main() {
-  testWidgets('AirGuardApp smoke and rendering test with mock repository', (WidgetTester tester) async {
+  testWidgets('AirGuardApp smoke, forecasting, and AI explainer rendering test', (WidgetTester tester) async {
     final mockRepo = MockEnvironmentalRepository();
     final mockLoc = MockLocationService();
 
@@ -155,12 +232,24 @@ void main() {
     expect(find.text('ENVIRONMENTAL INTELLIGENCE'), findsOneWidget);
 
     // Verify station name and AQI display
-    expect(find.textContaining('Test Monitoring Station'), findsOneWidget);
+    expect(find.textContaining('Test Monitoring Station'), findsWidgets);
     expect(find.text('CPCB AQI'), findsOneWidget);
-    expect(find.text('240'), findsOneWidget);
+    expect(find.text('240'), findsWidgets);
 
     // Verify provenance and distance display
     expect(find.text('LIVE MONITORING STATION'), findsOneWidget);
     expect(find.textContaining('2.8 km away'), findsWidgets);
+
+    // Verify AI Explainer card rendering
+    expect(find.text('AI ATMOSPHERIC EXPLAINER'), findsOneWidget);
+    expect(find.text('DETERMINISTIC EXPERT SYSTEM'), findsOneWidget);
+    expect(find.textContaining('Boundary layer thermal compression'), findsOneWidget);
+    expect(find.textContaining('Fine Particulate Matter (PM2.5)'), findsOneWidget);
+
+    // Verify Forecast Chart card rendering
+    expect(find.text('AIR QUALITY FORECAST'), findsOneWidget);
+    expect(find.text('FORECAST'), findsOneWidget);
+    expect(find.text('+1h'), findsOneWidget);
+    expect(find.text('+3h'), findsOneWidget);
   });
 }

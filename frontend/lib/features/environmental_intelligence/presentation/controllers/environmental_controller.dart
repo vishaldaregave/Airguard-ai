@@ -4,6 +4,8 @@ import '../../data/repositories/environmental_repository.dart';
 import '../../domain/models/observation_model.dart';
 import '../../domain/models/risk_assessment_model.dart';
 import '../../domain/models/station_model.dart';
+import '../../domain/models/forecast_model.dart';
+import '../../domain/models/ai_explanation_model.dart';
 
 class EnvironmentalState {
   final bool isLoading;
@@ -14,6 +16,15 @@ class EnvironmentalState {
   final AssessmentResponse? currentAssessment;
   final List<ProviderStatusItem> providerStatuses;
 
+  // Milestone 3 additions
+  final ForecastCurrentResponse? forecast;
+  final AIExplanationResponse? aiExplanation;
+  final int selectedHorizonHours;
+  final bool isForecastLoading;
+  final bool isAILoading;
+  final String? forecastError;
+  final String? aiError;
+
   EnvironmentalState({
     this.isLoading = false,
     this.errorMessage,
@@ -22,10 +33,25 @@ class EnvironmentalState {
     this.selectedStation,
     this.currentAssessment,
     this.providerStatuses = const [],
+    this.forecast,
+    this.aiExplanation,
+    this.selectedHorizonHours = 3,
+    this.isForecastLoading = false,
+    this.isAILoading = false,
+    this.forecastError,
+    this.aiError,
   });
 
   EnvironmentalObservation? get currentObservation =>
       currentAssessment?.observation;
+
+  HorizonForecastStep? get selectedForecastStep {
+    if (forecast == null || forecast!.forecasts.isEmpty) return null;
+    return forecast!.forecasts.firstWhere(
+      (f) => f.horizonHours == selectedHorizonHours,
+      orElse: () => forecast!.forecasts.first,
+    );
+  }
 
   EnvironmentalState copyWith({
     bool? isLoading,
@@ -35,15 +61,29 @@ class EnvironmentalState {
     MonitoringStationSummary? selectedStation,
     AssessmentResponse? currentAssessment,
     List<ProviderStatusItem>? providerStatuses,
+    ForecastCurrentResponse? forecast,
+    AIExplanationResponse? aiExplanation,
+    int? selectedHorizonHours,
+    bool? isForecastLoading,
+    bool? isAILoading,
+    String? forecastError,
+    String? aiError,
   }) {
     return EnvironmentalState(
       isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage,
+      errorMessage: errorMessage ?? this.errorMessage,
       userLocation: userLocation ?? this.userLocation,
       nearbyStations: nearbyStations ?? this.nearbyStations,
       selectedStation: selectedStation ?? this.selectedStation,
       currentAssessment: currentAssessment ?? this.currentAssessment,
       providerStatuses: providerStatuses ?? this.providerStatuses,
+      forecast: forecast ?? this.forecast,
+      aiExplanation: aiExplanation ?? this.aiExplanation,
+      selectedHorizonHours: selectedHorizonHours ?? this.selectedHorizonHours,
+      isForecastLoading: isForecastLoading ?? this.isForecastLoading,
+      isAILoading: isAILoading ?? this.isAILoading,
+      forecastError: forecastError ?? this.forecastError,
+      aiError: aiError ?? this.aiError,
     );
   }
 }
@@ -89,6 +129,9 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
         currentAssessment: assessment,
         providerStatuses: statuses,
       );
+
+      // 5. Asynchronously trigger Forecast and AI Explanation
+      await _fetchForecastAndExplanation(assessment, activeStation?.stationId);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -114,6 +157,8 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
         selectedStation: station,
         currentAssessment: assessment,
       );
+
+      await _fetchForecastAndExplanation(assessment, station.stationId);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -144,6 +189,8 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
         selectedStation: activeStation,
         currentAssessment: assessment,
       );
+
+      await _fetchForecastAndExplanation(assessment, activeStation?.stationId);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -157,6 +204,43 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
       await selectStation(state.selectedStation!);
     } else {
       await locateMe();
+    }
+  }
+
+  void selectForecastHorizon(int hours) {
+    state = state.copyWith(selectedHorizonHours: hours);
+  }
+
+  Future<void> _fetchForecastAndExplanation(
+    AssessmentResponse assessment,
+    String? stationId,
+  ) async {
+    // Forecast fetch
+    state = state.copyWith(isForecastLoading: true, forecastError: null);
+    try {
+      final forecast = await _repository.getForecast(
+        stationId: stationId,
+        lat: assessment.observation?.location.latitude,
+        lon: assessment.observation?.location.longitude,
+      );
+      state = state.copyWith(isForecastLoading: false, forecast: forecast);
+    } catch (e) {
+      state = state.copyWith(
+        isForecastLoading: false,
+        forecastError: 'Forecast unavailable: $e',
+      );
+    }
+
+    // AI Explanation fetch
+    state = state.copyWith(isAILoading: true, aiError: null);
+    try {
+      final explanation = await _repository.getAIExplanation(assessment: assessment);
+      state = state.copyWith(isAILoading: false, aiExplanation: explanation);
+    } catch (e) {
+      state = state.copyWith(
+        isAILoading: false,
+        aiError: 'Explanation unavailable: $e',
+      );
     }
   }
 }

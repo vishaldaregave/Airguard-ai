@@ -14,186 +14,157 @@ Discovers monitoring stations within a geographic radius of the query coordinate
 - `lon` (float, required): Longitude in decimal degrees ($-180.0$ to $180.0$).
 - `radius_km` (float, optional, default: `25.0`): Search radius in kilometers.
 
-**Response (200 OK):**
-```json
-{
-  "query_location": {
-    "latitude": 28.6139,
-    "longitude": 77.2090,
-    "city": "Delhi",
-    "country": "India"
-  },
-  "search_radius_km": 25.0,
-  "nearest_station": {
-    "station_id": "DEMO-DELHI-001",
-    "station_name": "Anand Vihar, New Delhi [DEMO FIXTURE]",
-    "provider": "DPCC Demo Sensor Feed",
-    "location": {
-      "latitude": 28.6508,
-      "longitude": 77.3152,
-      "city": "Delhi",
-      "country": "India"
-    },
-    "distance_km": 11.2,
-    "available_pollutants": ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3", "NH3"],
-    "data_source_type": "DEMO_FIXTURE",
-    "is_active": true
-  },
-  "nearby_stations": [ ... ],
-  "message": "Discovered 2 station(s) within 25.0 km."
-}
-```
-
 ---
 
 ### `GET /api/v1/stations/nearby`
 Returns a list of monitoring stations near coordinates sorted by Haversine distance.
 
-**Query Parameters:**
-- `lat` (float, required): Latitude.
-- `lon` (float, required): Longitude.
-- `radius_km` (float, optional, default: `25.0`): Radius in km.
-- `include_demo` (bool, optional, default: `true`): Include clearly labeled demo fixtures.
-
-**Response (200 OK):** `List[MonitoringStationSummary]`
-
 ---
 
 ### `GET /api/v1/stations/{station_id}`
-Retrieves metadata for a specific station by ID.
-
-**Response (200 OK):** `MonitoringStationSummary`  
-**Response (404 Not Found):** `{"detail": "Monitoring station not found."}`
+Returns full telemetry, metadata, and status for a specific station identifier.
 
 ---
 
-## 2. Air Quality Telemetry & Providers
+## 2. Environmental Assessment & Air Quality
 
 ### `GET /api/v1/air/current`
-Retrieves current environmental measurements, validates gas conversion and coordinates, calculates CPCB IND-AQI via continuous linear interpolation, and computes explainable exposure risk.
+Returns the verified current environmental assessment including deterministic CPCB AQI and explainable multi-pollutant exposure risk score.
 
-**Query Parameters:**
-- `station_id` (string, optional): Specific station ID.
-- `lat` (float, optional): User latitude (required if `station_id` omitted).
-- `lon` (float, optional): User longitude (required if `station_id` omitted).
-
-**Response (200 OK):**
-```json
-{
-  "observation": {
-    "station_id": "DEMO-DELHI-001",
-    "station_name": "Anand Vihar, New Delhi [DEMO FIXTURE]",
-    "location": { "latitude": 28.6508, "longitude": 77.3152, "country": "India" },
-    "timestamp": "2026-11-16T00:30:00Z",
-    "provider": "DPCC Demo Sensor Feed",
-    "data_source_type": "DEMO_FIXTURE",
-    "pm2_5": 185.0,
-    "pm10": 310.0,
-    "no2": 95.0,
-    "temperature_celsius": 19.5,
-    "relative_humidity_pct": 82.0,
-    "wind_speed_kmh": 4.2
-  },
-  "station": { ... },
-  "distance_from_query_km": 3.4,
-  "aqi_result": {
-    "standard": "CPCB_INDIA",
-    "status": "VALID",
-    "overall_aqi": 344,
-    "category": "Very Poor",
-    "color_code": "#FF0000",
-    "prominent_pollutant": "PM2.5",
-    "sub_indices": {
-      "PM2.5": {
-        "pollutant": "PM2.5",
-        "concentration": 185.0,
-        "unit": "µg/m³",
-        "sub_index": 344,
-        "category": "Very Poor",
-        "breakpoint_low": 120.0,
-        "breakpoint_high": 250.0,
-        "index_low": 300,
-        "index_high": 400,
-        "averaging_period_hours": 24
-      }
-    },
-    "health_advisory": { ... }
-  },
-  "risk_assessment": {
-    "risk_score": 78,
-    "risk_level": "VERY_HIGH",
-    "risk_summary": "Very high toxic pollutant burden...",
-    "breakdown": [ ... ],
-    "activity_recommendations": [ ... ]
-  },
-  "data_freshness_minutes": 15.0,
-  "is_stale": false
-}
-```
-
----
-
-### `GET /api/v1/air/history`
-Returns chronological, deduplicated observation history for a station.
-
-**Query Parameters:**
-- `station_id` (string, required): Station ID.
-- `hours` (int, optional, default: `24`): History duration in hours ($1$ to $168$).
-
-**Response (200 OK):**
-```json
-{
-  "station_id": "METEO-GRID-28.61-77.21",
-  "station_name": "Open-Meteo Regional Model",
-  "provider": "Open-Meteo Air Quality (Atmospheric Model)",
-  "data_source_type": "HISTORICAL",
-  "count": 24,
-  "observations": [ ... ]
-}
-```
-*Note*: Timestamps in the future within the model window are tagged as `FORECAST`, past steps are tagged as `HISTORICAL`.
+**Query Parameters (one set required):**
+- `station_id` (string, optional): Specific station identifier.
+- `lat` & `lon` (float, optional): GPS coordinates for nearest station resolution.
 
 ---
 
 ### `GET /api/v1/air/providers/status`
-Returns live health and telemetry of all integrated providers.
+Returns real-time operational status, latencies, and connectivity telemetry across all ingestion adapters.
 
-**Response (200 OK):**
+---
+
+## 3. Milestone 3: Time-Series Forecasting & AI Explanations
+
+### `GET /api/v1/forecast/current`
+Returns multi-horizon time-series predictions (+1h, +3h, +6h, +12h, +24h) with 95% and 90% empirical prediction intervals and deterministic forecast CPCB AQI.
+
+**Query Parameters:**
+- `station_id` (string, optional): Specific station ID.
+- `lat` & `lon` (float, optional): User coordinates.
+
+**Response Schema (`ForecastCurrentResponse`):**
 ```json
 {
-  "providers": [
+  "status": "ACTIVE",
+  "station_id": "DELHI-CAAQMS-01",
+  "station_name": "Lodhi Road CAAQMS [PHYSICAL STATION]",
+  "data_source_type": "PHYSICAL_STATION",
+  "base_timestamp": "2026-11-16T01:00:00Z",
+  "forecasts": [
     {
-      "name": "openaq",
-      "display_name": "OpenAQ Global Monitoring Network (v3)",
-      "status": "UNAUTHENTICATED",
-      "requires_api_key": true,
-      "is_authenticated": false,
-      "primary_data_type": "LIVE",
-      "supported_pollutants": ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3"],
-      "attribution": "Air quality data courtesy of OpenAQ Community & Global EPA/CPCB Feeds.",
-      "details": "OPENAQ_API_KEY environment variable is not configured. Live retrieval UNVERIFIED."
-    },
-    {
-      "name": "open_meteo",
-      "display_name": "Open-Meteo Air Quality (Atmospheric Model)",
-      "status": "ONLINE",
-      "requires_api_key": false,
-      "is_authenticated": true,
-      "primary_data_type": "ESTIMATED",
-      "supported_pollutants": ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3"],
-      "attribution": "Data provided by Open-Meteo.com under Non-Commercial / Attribution Creative Commons.",
-      "latency_ms": 92.4
+      "horizon_hours": 1,
+      "target_timestamp": "2026-11-16T02:00:00Z",
+      "predicted_aqi": 235,
+      "predicted_aqi_category": "Poor",
+      "predicted_aqi_color": "#FB923C",
+      "predicted_aqi_prominent_pollutant": "PM2.5",
+      "is_cpcb_aqi_valid": true,
+      "pollutant_predictions": {
+        "PM2.5": {
+          "pollutant": "PM2.5",
+          "unit": "µg/m³",
+          "predicted_value": 118.5,
+          "ci95_lower": 99.1,
+          "ci95_upper": 137.9,
+          "ci90_lower": 102.2,
+          "ci90_upper": 134.8
+        },
+        "PM10": {
+          "pollutant": "PM10",
+          "unit": "µg/m³",
+          "predicted_value": 210.0,
+          "ci95_lower": 178.0,
+          "ci95_upper": 242.0
+        }
+      },
+      "temperature_celsius": 18.2,
+      "relative_humidity_pct": 84.0,
+      "wind_speed_kmh": 4.5
     }
   ],
-  "active_count": 2,
-  "timestamp": "2026-11-16T01:00:00Z"
+  "model_metadata": {
+    "model_type": "AUTOREGRESSIVE_RIDGE",
+    "training_sample_count": 72,
+    "evaluation_period_start": "2026-11-13T01:00:00Z",
+    "evaluation_period_end": "2026-11-16T01:00:00Z",
+    "mae_pm25": 11.2,
+    "rmse_pm25": 15.4,
+    "persistence_mae_pm25": 18.6
+  },
+  "disclaimer": "Statistical time-series projection. Real conditions may deviate due to unmodeled emission shocks."
 }
 ```
 
 ---
 
-## 3. Core Calculation & Diagnostics
+### `GET /api/v1/forecast/accuracy`
+Returns out-of-sample benchmark comparison (MAE, RMSE) of the Autoregressive Ridge model against Persistence and Seasonal Naive baselines across every forecast horizon (+1h, +3h, +6h, +12h, +24h).
 
-- `POST /api/v1/aqi/calculate`: Deterministic calculation from an arbitrary `EnvironmentalObservationInput`.
-- `GET /api/v1/aqi/demo-fixtures`: Explicit synthetic fixtures for testing.
-- `GET /api/v1/health`: Basic service status.
+---
+
+### `GET /api/v1/forecast/model/status`
+Returns metadata regarding the active forecasting pipeline, training sample volume, feature dimensions, and retraining eligibility.
+
+---
+
+### `POST /api/v1/ai/explain`
+Generates grounded environmental and atmospheric explanations answering six structured dimensions without calculating AQI or generating medical claims.
+
+**Request Body (`AIExplanationRequest`):**
+```json
+{
+  "station_id": "DELHI-CAAQMS-01",
+  "station_name": "Lodhi Road CAAQMS",
+  "latitude": 28.61,
+  "longitude": 77.20,
+  "data_source_type": "PHYSICAL_STATION",
+  "provider": "CPCB / DPCC",
+  "observation_timestamp": "2026-11-16T01:00:00Z",
+  "overall_aqi": 240,
+  "aqi_category": "Poor",
+  "prominent_pollutant": "PM2.5",
+  "pollutant_sub_indices": { "PM2.5": 240, "PM10": 180, "NO2": 65 },
+  "pollutant_concentrations": { "PM2.5": 125.0, "PM10": 210.0, "NO2": 52.0 },
+  "temperature_celsius": 19.0,
+  "relative_humidity_pct": 82.0,
+  "wind_speed_kmh": 4.2,
+  "exposure_risk_score": 68,
+  "exposure_risk_level": "HIGH",
+  "risk_primary_driver": "PM2.5",
+  "historical_24h_avg_aqi": 215
+}
+```
+
+**Response Schema (`AIExplanationResponse`):**
+```json
+{
+  "status": "SUCCESS",
+  "provider_used": "deterministic_expert_system",
+  "station_name": "Lodhi Road CAAQMS",
+  "observation_timestamp": "2026-11-16T01:00:00Z",
+  "overall_aqi": 240,
+  "aqi_category": "Poor",
+  "prominent_pollutant": "PM2.5",
+  "atmospheric_dynamics": "Atmospheric boundary layer compression and low nocturnal surface wind speeds (4.2 km/h) restrict vertical convective mixing.",
+  "primary_driver_analysis": "Fine particulate matter (PM2.5) at 125.0 µg/m³ is the dominant driver, registering the highest sub-index (240) among all active pollutants.",
+  "elevationCauses": "Low surface ventilation combined with urban combustion emissions and relative humidity (82%) promotes particulate hygroscopic growth.",
+  "activity_implications": "Poor air quality indicates potential respiratory discomfort for prolonged outdoor physical exertion.",
+  "practical_precautions": "Consider limiting strenuous outdoor morning activity; keep residential windows closed during calm hours; use particulate-filtering respirators (N95/FFP2).",
+  "historical_comparison": "Current AQI (240) is elevated by approximately 11.6% compared to the 24-hour historical baseline (215).",
+  "disclaimer": "Informational environmental interpretation only. Does not constitute medical diagnosis or individual clinical guidance."
+}
+```
+
+---
+
+### `GET /api/v1/history/availability`
+Audits persistent historical observation records, reporting record counts, date ranges, completeness, and strict separation between physical stations, model estimates, and synthetic fixtures.

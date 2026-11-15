@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AirGuard AI"
-    VERSION: str = "1.1.0"
+    VERSION: str = "1.2.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
@@ -43,10 +43,16 @@ class Settings(BaseSettings):
     DATAGOVIN_BASE_URL: str = "https://api.data.gov.in/resource"
     DATAGOVIN_RESOURCE_ID: str = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
 
+    # 4. LLM Explainer Configurations (Backend-only credentials)
+    GEMINI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+
     # Caching and Rate-limiting TTLs
     CACHE_STATIONS_TTL_SECONDS: int = 3600      # 1 hour
     CACHE_OBSERVATIONS_TTL_SECONDS: int = 900   # 15 minutes
     CACHE_PROVIDER_STATUS_TTL_SECONDS: int = 300 # 5 minutes
+    CACHE_FORECAST_TTL_SECONDS: int = 900       # 15 minutes
+    CACHE_EXPLANATION_TTL_SECONDS: int = 1800   # 30 minutes
 
     # Default Search Parameters
     DEFAULT_SEARCH_RADIUS_KM: float = 25.0

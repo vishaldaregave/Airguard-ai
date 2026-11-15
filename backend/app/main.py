@@ -9,14 +9,13 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.api.v1.router import api_router
-from app.db.base import Base, engine
-import app.db.models  # ensure models are registered
+from app.db.base import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database tables
-    Base.metadata.create_all(bind=engine)
+    init_db()
     yield
 
 
