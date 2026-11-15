@@ -22,7 +22,7 @@ from app.schemas.provider import (
     ProviderHealth,
     ProviderStatusItem,
 )
-from app.services.quality import convert_and_validate_pollutant
+from app.services.quality import convert_and_validate_pollutant, validate_station_coordinates
 from app.services.geo import haversine_distance_km
 
 
@@ -72,7 +72,11 @@ class OpenAQProvider(BaseAirQualityProvider):
                 attribution=self.attribution,
                 last_check_timestamp=datetime.now(timezone.utc),
                 latency_ms=0.0,
-                details="OPENAQ_API_KEY environment variable is not configured. Register at openaq.org.",
+                details=(
+                    "OPENAQ_API_KEY environment variable is not configured. "
+                    "OpenAQ API v3 strictly requires registered API key authentication via X-API-Key header. "
+                    "Real live retrieval from OpenAQ remains UNVERIFIED until credentials are provided."
+                ),
             )
 
         # Ping locations endpoint
@@ -83,13 +87,13 @@ class OpenAQProvider(BaseAirQualityProvider):
                 latency = round((time.time() - start_time) * 1000.0, 1)
                 if res.status_code == 200:
                     status = ProviderHealth.ONLINE
-                    details = "OpenAQ API v3 verified and authenticated."
+                    details = "OpenAQ API v3 verified and authenticated with valid API key."
                 elif res.status_code in (401, 403):
                     status = ProviderHealth.UNAUTHENTICATED
-                    details = f"Authentication rejected (HTTP {res.status_code}): Invalid OPENAQ_API_KEY."
+                    details = f"Authentication rejected (HTTP {res.status_code}): Invalid or expired OPENAQ_API_KEY."
                 elif res.status_code == 429:
                     status = ProviderHealth.DEGRADED
-                    details = "Rate limit reached (HTTP 429). Backoff active."
+                    details = "Rate limit reached (HTTP 429). Exponential backoff active."
                 else:
                     status = ProviderHealth.DEGRADED
                     details = f"HTTP {res.status_code}: {res.text[:100]}"
@@ -139,7 +143,10 @@ class OpenAQProvider(BaseAirQualityProvider):
                     coords = loc.get("coordinates") or {}
                     lat = coords.get("latitude")
                     lon = coords.get("longitude")
-                    if lat is None or lon is None:
+                    
+                    # Validate station coordinates
+                    is_valid_coord, _ = validate_station_coordinates(lat, lon)
+                    if not is_valid_coord or lat is None or lon is None:
                         continue
 
                     # Pollutant parameters present
@@ -216,7 +223,8 @@ class OpenAQProvider(BaseAirQualityProvider):
                 coords = loc.get("coordinates") or {}
                 lat = coords.get("latitude")
                 lon = coords.get("longitude")
-                if lat is None or lon is None:
+                is_valid_coord, _ = validate_station_coordinates(lat, lon)
+                if not is_valid_coord or lat is None or lon is None:
                     return None
 
                 sensors = loc.get("sensors", [])
@@ -295,8 +303,10 @@ class OpenAQProvider(BaseAirQualityProvider):
                 for sensor_read in data:
                     coords = sensor_read.get("coordinates")
                     if coords:
-                        lat = coords.get("latitude", lat)
-                        lon = coords.get("longitude", lon)
+                        c_lat = coords.get("latitude")
+                        c_lon = coords.get("longitude")
+                        if c_lat is not None and c_lon is not None:
+                            lat, lon = c_lat, c_lon
 
                     val = sensor_read.get("value")
                     unit = sensor_read.get("units") or "µg/m³"

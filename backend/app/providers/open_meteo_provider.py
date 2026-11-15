@@ -1,7 +1,7 @@
 """
 AirGuard AI - Open-Meteo Air Quality Provider Adapter
 Delivers high-resolution atmospheric chemical transport model data.
-Strict Data Integrity Rule: Classified as ESTIMATED (current model) or FORECAST, NEVER LIVE.
+Strict Data Integrity Rule: Classified as ESTIMATED (current model) or FORECAST (future model steps), NEVER LIVE.
 """
 import time
 from datetime import datetime, timezone
@@ -58,7 +58,7 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                 latency = round((time.time() - start_time) * 1000.0, 1)
                 if res.status_code == 200:
                     status = ProviderHealth.ONLINE
-                    details = "Model API accessible without authentication."
+                    details = "Model API accessible without authentication (gridded chemical transport model)."
                 else:
                     status = ProviderHealth.DEGRADED
                     details = f"HTTP {res.status_code}: {res.text[:100]}"
@@ -168,7 +168,7 @@ class OpenMeteoProvider(BaseAirQualityProvider):
         weather_url = (
             f"{settings.OPEN_METEO_WEATHER_BASE_URL}/forecast"
             f"?latitude={lat}&longitude={lon}"
-            "&current=temperature_2m,relative_humidity_2m,wind_speed_10m"
+            "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,surface_pressure"
             "&timezone=auto"
         )
 
@@ -180,7 +180,7 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                 air_data = air_res.json().get("current", {})
 
                 # Try weather info
-                temp, hum, wind = None, None, None
+                temp, hum, wind, press = None, None, None, None
                 try:
                     w_res = await client.get(weather_url)
                     if w_res.status_code == 200:
@@ -188,6 +188,7 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                         temp = w_data.get("temperature_2m")
                         hum = w_data.get("relative_humidity_2m")
                         wind = w_data.get("wind_speed_10m")
+                        press = w_data.get("surface_pressure")
                 except Exception:
                     pass
 
@@ -202,10 +203,18 @@ class OpenMeteoProvider(BaseAirQualityProvider):
 
                 pm25, _ = convert_and_validate_pollutant(PollutantType.PM2_5, raw_pm25, "µg/m³")
                 pm10, _ = convert_and_validate_pollutant(PollutantType.PM10, raw_pm10, "µg/m³")
-                no2, _ = convert_and_validate_pollutant(PollutantType.NO2, raw_no2, "µg/m³")
-                so2, _ = convert_and_validate_pollutant(PollutantType.SO2, raw_so2, "µg/m³")
-                co, _ = convert_and_validate_pollutant(PollutantType.CO, raw_co, "µg/m³")
-                o3, _ = convert_and_validate_pollutant(PollutantType.O3, raw_o3, "µg/m³")
+                no2, _ = convert_and_validate_pollutant(
+                    PollutantType.NO2, raw_no2, "µg/m³", temperature_celsius=temp, pressure_hpa=press
+                )
+                so2, _ = convert_and_validate_pollutant(
+                    PollutantType.SO2, raw_so2, "µg/m³", temperature_celsius=temp, pressure_hpa=press
+                )
+                co, _ = convert_and_validate_pollutant(
+                    PollutantType.CO, raw_co, "µg/m³", temperature_celsius=temp, pressure_hpa=press
+                )
+                o3, _ = convert_and_validate_pollutant(
+                    PollutantType.O3, raw_o3, "µg/m³", temperature_celsius=temp, pressure_hpa=press
+                )
 
                 time_str = air_data.get("time")
                 if time_str:
@@ -278,7 +287,7 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                 co_list = data.get("carbon_monoxide", [])
                 o3_list = data.get("ozone", [])
 
-                # Take latest 'hours' entries up to now
+                now = datetime.now(timezone.utc)
                 limit = min(hours, len(times))
                 for i in range(len(times) - limit, len(times)):
                     try:
@@ -289,12 +298,32 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                     except Exception:
                         obs_time = datetime.now(timezone.utc)
 
-                    pm25, _ = convert_and_validate_pollutant(PollutantType.PM2_5, pm25_list[i] if i < len(pm25_list) else None, "µg/m³")
-                    pm10, _ = convert_and_validate_pollutant(PollutantType.PM10, pm10_list[i] if i < len(pm10_list) else None, "µg/m³")
-                    no2, _ = convert_and_validate_pollutant(PollutantType.NO2, no2_list[i] if i < len(no2_list) else None, "µg/m³")
-                    so2, _ = convert_and_validate_pollutant(PollutantType.SO2, so2_list[i] if i < len(so2_list) else None, "µg/m³")
-                    co, _ = convert_and_validate_pollutant(PollutantType.CO, co_list[i] if i < len(co_list) else None, "µg/m³")
-                    o3, _ = convert_and_validate_pollutant(PollutantType.O3, o3_list[i] if i < len(o3_list) else None, "µg/m³")
+                    # Strict Provenance Classification:
+                    # If obs_time is in the future (> now + 5 min), classify as FORECAST
+                    # Otherwise, classify as HISTORICAL
+                    if obs_time > now:
+                        data_type = DataSourceType.FORECAST
+                    else:
+                        data_type = DataSourceType.HISTORICAL
+
+                    pm25, _ = convert_and_validate_pollutant(
+                        PollutantType.PM2_5, pm25_list[i] if i < len(pm25_list) else None, "µg/m³"
+                    )
+                    pm10, _ = convert_and_validate_pollutant(
+                        PollutantType.PM10, pm10_list[i] if i < len(pm10_list) else None, "µg/m³"
+                    )
+                    no2, _ = convert_and_validate_pollutant(
+                        PollutantType.NO2, no2_list[i] if i < len(no2_list) else None, "µg/m³"
+                    )
+                    so2, _ = convert_and_validate_pollutant(
+                        PollutantType.SO2, so2_list[i] if i < len(so2_list) else None, "µg/m³"
+                    )
+                    co, _ = convert_and_validate_pollutant(
+                        PollutantType.CO, co_list[i] if i < len(co_list) else None, "µg/m³"
+                    )
+                    o3, _ = convert_and_validate_pollutant(
+                        PollutantType.O3, o3_list[i] if i < len(o3_list) else None, "µg/m³"
+                    )
 
                     observations.append(
                         EnvironmentalObservationInput(
@@ -303,7 +332,7 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                             location=LocationCoordinate(latitude=lat, longitude=lon, city="Grid", country="India"),
                             timestamp=obs_time,
                             provider=self.display_name,
-                            data_source_type=DataSourceType.HISTORICAL,
+                            data_source_type=data_type,
                             pm2_5=pm25,
                             pm10=pm10,
                             no2=no2,

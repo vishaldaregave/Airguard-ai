@@ -62,7 +62,7 @@ Returns a list of monitoring stations near coordinates sorted by Haversine dista
 ### `GET /api/v1/stations/{station_id}`
 Retrieves metadata for a specific station by ID.
 
-**Response (200 OK):** `MonitoringStationSummary`
+**Response (200 OK):** `MonitoringStationSummary`  
 **Response (404 Not Found):** `{"detail": "Monitoring station not found."}`
 
 ---
@@ -70,7 +70,7 @@ Retrieves metadata for a specific station by ID.
 ## 2. Air Quality Telemetry & Providers
 
 ### `GET /api/v1/air/current`
-Retrieves current environmental measurements, calculates CPCB IND-AQI, and computes explainable exposure risk.
+Retrieves current environmental measurements, validates gas conversion and coordinates, calculates CPCB IND-AQI via continuous linear interpolation, and computes explainable exposure risk.
 
 **Query Parameters:**
 - `station_id` (string, optional): Specific station ID.
@@ -99,11 +99,24 @@ Retrieves current environmental measurements, calculates CPCB IND-AQI, and compu
   "aqi_result": {
     "standard": "CPCB_INDIA",
     "status": "VALID",
-    "overall_aqi": 350,
+    "overall_aqi": 344,
     "category": "Very Poor",
     "color_code": "#FF0000",
     "prominent_pollutant": "PM2.5",
-    "sub_indices": { ... },
+    "sub_indices": {
+      "PM2.5": {
+        "pollutant": "PM2.5",
+        "concentration": 185.0,
+        "unit": "µg/m³",
+        "sub_index": 344,
+        "category": "Very Poor",
+        "breakpoint_low": 120.0,
+        "breakpoint_high": 250.0,
+        "index_low": 300,
+        "index_high": 400,
+        "averaging_period_hours": 24
+      }
+    },
     "health_advisory": { ... }
   },
   "risk_assessment": {
@@ -121,7 +134,7 @@ Retrieves current environmental measurements, calculates CPCB IND-AQI, and compu
 ---
 
 ### `GET /api/v1/air/history`
-Returns chronological observation history for a station.
+Returns chronological, deduplicated observation history for a station.
 
 **Query Parameters:**
 - `station_id` (string, required): Station ID.
@@ -130,14 +143,15 @@ Returns chronological observation history for a station.
 **Response (200 OK):**
 ```json
 {
-  "station_id": "DEMO-DELHI-001",
-  "station_name": "Anand Vihar",
-  "provider": "DPCC",
+  "station_id": "METEO-GRID-28.61-77.21",
+  "station_name": "Open-Meteo Regional Model",
+  "provider": "Open-Meteo Air Quality (Atmospheric Model)",
   "data_source_type": "HISTORICAL",
   "count": 24,
   "observations": [ ... ]
 }
 ```
+*Note*: Timestamps in the future within the model window are tagged as `FORECAST`, past steps are tagged as `HISTORICAL`.
 
 ---
 
@@ -151,13 +165,13 @@ Returns live health and telemetry of all integrated providers.
     {
       "name": "openaq",
       "display_name": "OpenAQ Global Monitoring Network (v3)",
-      "status": "ONLINE",
+      "status": "UNAUTHENTICATED",
       "requires_api_key": true,
-      "is_authenticated": true,
+      "is_authenticated": false,
       "primary_data_type": "LIVE",
       "supported_pollutants": ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3"],
-      "attribution": "Air quality data courtesy of OpenAQ Community.",
-      "latency_ms": 115.2
+      "attribution": "Air quality data courtesy of OpenAQ Community & Global EPA/CPCB Feeds.",
+      "details": "OPENAQ_API_KEY environment variable is not configured. Live retrieval UNVERIFIED."
     },
     {
       "name": "open_meteo",
@@ -167,12 +181,12 @@ Returns live health and telemetry of all integrated providers.
       "is_authenticated": true,
       "primary_data_type": "ESTIMATED",
       "supported_pollutants": ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3"],
-      "attribution": "Data provided by Open-Meteo.com under CC Attribution.",
-      "latency_ms": 85.0
+      "attribution": "Data provided by Open-Meteo.com under Non-Commercial / Attribution Creative Commons.",
+      "latency_ms": 92.4
     }
   ],
   "active_count": 2,
-  "timestamp": "2026-11-16T00:45:00Z"
+  "timestamp": "2026-11-16T01:00:00Z"
 }
 ```
 

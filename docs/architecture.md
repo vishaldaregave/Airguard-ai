@@ -24,7 +24,8 @@ AirGuard AI is engineered as a software-only, production-grade environmental int
 ├───────────────────────────────────┴────────────────────────────────────┤
 │               Multi-Provider Environmental Pipeline                    │
 │ • Geospatial Intelligence (Haversine & Radius Discovery)               │
-│ • Data Quality Engine (STP Unit Conversion, Outlier Rejection)         │
+│ • Data Quality Engine (25°C Ref Unit Normalization, Outlier Rejection) │
+│ • Provider-Calibrated Freshness & Deduplication                        │
 │ • TTL In-Memory Caching (Stations: 1hr, Observations: 15m)            │
 └──────┬──────────────────────┬───────────────────────┬──────────────────┘
        │                      │                       │
@@ -51,7 +52,7 @@ AirGuard AI is engineered as a software-only, production-grade environmental int
   - `CPCBDataGovProvider`: Official National Data Sharing and Accessibility Policy (NDSAP) CAAQMS portal adapter.
   - `DemoFixtureProvider`: Clearly isolated synthetic fixtures for offline testing.
 - **Engines & Services**:
-  - `environmental_service.py`: Aggregator routing station requests, executing Haversine distance calculations, enforcing caching TTLs, and feeding measurements into calculation engines.
-  - `cpcb_aqi.py`: Pure deterministic CPCB IND-AQI calculator implementing official 2014 Central Pollution Control Board equations.
+  - `environmental_service.py`: Aggregator routing station requests, executing Haversine distance calculations, enforcing caching TTLs, deduplicating records, and feeding measurements into calculation engines.
+  - `cpcb_aqi.py`: Pure deterministic CPCB IND-AQI calculator implementing official 2014 Central Pollution Control Board piecewise continuous linear equations with half-up rounding.
   - `risk_scoring.py`: Multi-factor explainable exposure risk engine modeling chemical compounding and atmospheric stagnation without hallucinated medical claims.
-  - `quality.py`: Validates plausible bounds, detects staleness (>120 min), and normalizes units at Standard Temperature & Pressure (STP).
+  - `quality.py`: Validates plausible bounds, detects provider-calibrated staleness (Open-Meteo: 90m, OpenAQ: 120m, CPCB: 180m), validates coordinates, and normalizes gas units at Standard Reference Conditions ($25^\circ\text{C}, 1013.25\text{ hPa}$) with ambient $T/P$ dynamic adjustment.

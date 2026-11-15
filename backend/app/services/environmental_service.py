@@ -251,8 +251,10 @@ class EnvironmentalService:
         aqi_result = calculate_cpcb_aqi(obs)
         risk_result = calculate_exposure_risk(aqi_result, obs)
 
-        # Staleness evaluation
-        is_stale, age_minutes = check_observation_staleness(obs.timestamp)
+        # Provider-aware staleness evaluation
+        is_stale, age_minutes = check_observation_staleness(
+            obs.timestamp, provider_name=obs.provider, data_source_type=obs.data_source_type
+        )
 
         response = CurrentAirQualityResponse(
             observation=obs,
@@ -308,8 +310,18 @@ class EnvironmentalService:
             else:
                 obs_list = []
 
-        await cache.set(cache_key, obs_list, settings.CACHE_OBSERVATIONS_TTL_SECONDS)
-        return obs_list
+        # Deduplicate and sort chronologically
+        seen_timestamps = set()
+        deduped: List[EnvironmentalObservationInput] = []
+        for o in obs_list:
+            ts_str = o.timestamp.isoformat()
+            if ts_str not in seen_timestamps:
+                seen_timestamps.add(ts_str)
+                deduped.append(o)
+        deduped.sort(key=lambda x: x.timestamp)
+
+        await cache.set(cache_key, deduped, settings.CACHE_OBSERVATIONS_TTL_SECONDS)
+        return deduped
 
 
 # Singleton service instance

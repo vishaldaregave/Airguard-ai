@@ -43,6 +43,9 @@ class SubIndexResult(BaseModel):
     breakpoint_high: float = Field(..., description="Upper concentration breakpoint")
     index_low: int = Field(..., description="Lower index breakpoint")
     index_high: int = Field(..., description="Upper index breakpoint")
+    averaging_period_hours: Optional[int] = Field(
+        None, description="Official CPCB reference averaging period in hours (24h or 8h)"
+    )
 
 
 class HealthAdvisory(BaseModel):

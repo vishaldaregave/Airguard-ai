@@ -15,74 +15,76 @@ from app.schemas.aqi import (
     HealthAdvisory,
     SubIndexResult,
 )
-from app.core.config import settings
+from app.services.quality import check_observation_staleness
 
 
-# Official CPCB Breakpoints: (B_lo, B_hi, I_lo, I_hi)
+# Official CPCB Continuous Breakpoints: (B_lo, B_hi, I_lo, I_hi)
+# Piecewise continuous linear interpolation across health impact classes:
+# Good (0-50), Satisfactory (50-100), Moderate (100-200), Poor (200-300), Very Poor (300-400), Severe (400-500)
 CPCB_BREAKPOINTS: Dict[PollutantType, List[Tuple[float, float, int, int]]] = {
     PollutantType.PM10: [
         (0.0, 50.0, 0, 50),
-        (51.0, 100.0, 51, 100),
-        (101.0, 250.0, 101, 200),
-        (251.0, 350.0, 201, 300),
-        (351.0, 430.0, 301, 400),
-        (431.0, 500.0, 401, 500),
+        (50.0, 100.0, 50, 100),
+        (100.0, 250.0, 100, 200),
+        (250.0, 350.0, 200, 300),
+        (350.0, 430.0, 300, 400),
+        (430.0, 500.0, 400, 500),
     ],
     PollutantType.PM2_5: [
         (0.0, 30.0, 0, 50),
-        (31.0, 60.0, 51, 100),
-        (61.0, 90.0, 101, 200),
-        (91.0, 120.0, 201, 300),
-        (121.0, 250.0, 301, 400),
-        (251.0, 350.0, 401, 500),
+        (30.0, 60.0, 50, 100),
+        (60.0, 90.0, 100, 200),
+        (90.0, 120.0, 200, 300),
+        (120.0, 250.0, 300, 400),
+        (250.0, 350.0, 400, 500),
     ],
     PollutantType.NO2: [
         (0.0, 40.0, 0, 50),
-        (41.0, 80.0, 51, 100),
-        (81.0, 180.0, 101, 200),
-        (181.0, 280.0, 201, 300),
-        (281.0, 400.0, 301, 400),
-        (401.0, 500.0, 401, 500),
+        (40.0, 80.0, 50, 100),
+        (80.0, 180.0, 100, 200),
+        (180.0, 280.0, 200, 300),
+        (280.0, 400.0, 300, 400),
+        (400.0, 500.0, 400, 500),
     ],
     PollutantType.O3: [
         (0.0, 50.0, 0, 50),
-        (51.0, 100.0, 51, 100),
-        (101.0, 168.0, 101, 200),
-        (169.0, 208.0, 201, 300),
-        (209.0, 748.0, 301, 400),
-        (749.0, 1000.0, 401, 500),
+        (50.0, 100.0, 50, 100),
+        (100.0, 168.0, 100, 200),
+        (168.0, 208.0, 200, 300),
+        (208.0, 748.0, 300, 400),
+        (748.0, 1000.0, 400, 500),
     ],
     PollutantType.CO: [
         (0.0, 1.0, 0, 50),
-        (1.1, 2.0, 51, 100),
-        (2.1, 10.0, 101, 200),
-        (10.1, 17.0, 201, 300),
-        (17.1, 34.0, 301, 400),
-        (34.1, 50.0, 401, 500),
+        (1.0, 2.0, 50, 100),
+        (2.0, 10.0, 100, 200),
+        (10.0, 17.0, 200, 300),
+        (17.0, 34.0, 300, 400),
+        (34.0, 50.0, 400, 500),
     ],
     PollutantType.SO2: [
         (0.0, 40.0, 0, 50),
-        (41.0, 80.0, 51, 100),
-        (81.0, 380.0, 101, 200),
-        (381.0, 800.0, 201, 300),
-        (801.0, 1600.0, 301, 400),
-        (1601.0, 2000.0, 401, 500),
+        (40.0, 80.0, 50, 100),
+        (80.0, 380.0, 100, 200),
+        (380.0, 800.0, 200, 300),
+        (800.0, 1600.0, 300, 400),
+        (1600.0, 2000.0, 400, 500),
     ],
     PollutantType.NH3: [
         (0.0, 200.0, 0, 50),
-        (201.0, 400.0, 51, 100),
-        (401.0, 800.0, 101, 200),
-        (801.0, 1200.0, 201, 300),
-        (1201.0, 1800.0, 301, 400),
-        (1801.0, 2400.0, 401, 500),
+        (200.0, 400.0, 50, 100),
+        (400.0, 800.0, 100, 200),
+        (800.0, 1200.0, 200, 300),
+        (1200.0, 1800.0, 300, 400),
+        (1800.0, 2400.0, 400, 500),
     ],
     PollutantType.PB: [
         (0.0, 0.5, 0, 50),
-        (0.51, 1.0, 51, 100),
-        (1.01, 2.0, 101, 200),
-        (2.01, 3.0, 201, 300),
-        (3.01, 3.5, 301, 400),
-        (3.51, 5.0, 401, 500),
+        (0.5, 1.0, 50, 100),
+        (1.0, 2.0, 100, 200),
+        (2.0, 3.0, 200, 300),
+        (3.0, 3.5, 300, 400),
+        (3.5, 5.0, 400, 500),
     ],
 }
 
@@ -95,6 +97,20 @@ POLLUTANT_UNITS = {
     PollutantType.SO2: "µg/m³",
     PollutantType.NH3: "µg/m³",
     PollutantType.PB: "µg/m³",
+}
+
+# CPCB Reference Averaging Periods:
+# PM10, PM2.5, NO2, SO2, NH3, Pb: 24-hour average
+# CO, O3: 8-hour average (or 1-hour sub-index during severe events)
+CPCB_AVERAGING_PERIODS: Dict[PollutantType, int] = {
+    PollutantType.PM10: 24,
+    PollutantType.PM2_5: 24,
+    PollutantType.NO2: 24,
+    PollutantType.SO2: 24,
+    PollutantType.NH3: 24,
+    PollutantType.PB: 24,
+    PollutantType.CO: 8,
+    PollutantType.O3: 8,
 }
 
 
@@ -131,7 +147,7 @@ def calculate_sub_index(
     pollutant: PollutantType, concentration: float
 ) -> Optional[SubIndexResult]:
     """
-    Calculates sub-index Ip for a given pollutant using CPCB linear interpolation:
+    Calculates sub-index Ip for a given pollutant using CPCB piecewise linear interpolation:
     Ip = [(I_hi - I_lo) / (B_hi - B_lo)] * (Cp - B_lo) + I_lo
     """
     if concentration is None or concentration < 0:
@@ -143,19 +159,18 @@ def calculate_sub_index(
 
     # Handle value below lowest breakpoint
     if concentration <= breakpoints[0][0]:
-        sub_index = breakpoints[0][2]
         b_lo, b_hi, i_lo, i_hi = breakpoints[0]
-        category = get_aqi_category(sub_index)
         return SubIndexResult(
             pollutant=pollutant.value,
             concentration=concentration,
             unit=POLLUTANT_UNITS[pollutant],
-            sub_index=sub_index,
-            category=category,
+            sub_index=0,
+            category=AQICategory.GOOD,
             breakpoint_low=b_lo,
             breakpoint_high=b_hi,
             index_low=i_lo,
             index_high=i_hi,
+            averaging_period_hours=CPCB_AVERAGING_PERIODS.get(pollutant),
         )
 
     matched_bp = None
@@ -171,22 +186,17 @@ def calculate_sub_index(
             matched_bp = (highest_bp[1], concentration, 500, 500)
             sub_index = 500
         else:
-            # Handle possible slight gaps between breakpoint bounds (e.g. 50.0 to 51.0)
-            # Find the closest lower breakpoint
-            for i in range(len(breakpoints) - 1):
-                if breakpoints[i][1] < concentration < breakpoints[i + 1][0]:
-                    matched_bp = breakpoints[i + 1]
-                    break
-            if not matched_bp:
-                matched_bp = breakpoints[-1]
+            # Fallback for floating numerical edge
+            matched_bp = breakpoints[-1]
 
     b_lo, b_hi, i_lo, i_hi = matched_bp
     if b_hi == b_lo:
         sub_index = i_hi
     else:
-        # Linear interpolation
+        # CPCB Official Linear Interpolation formula
         raw_index = ((i_hi - i_lo) / (b_hi - b_lo)) * (concentration - b_lo) + i_lo
-        sub_index = int(round(raw_index))
+        # Half-up rounding (CPCB standard mathematical convention)
+        sub_index = int(raw_index + 0.5)
         # Ensure within bounds [0, 500]
         sub_index = max(0, min(500, sub_index))
 
@@ -201,6 +211,7 @@ def calculate_sub_index(
         breakpoint_high=b_hi,
         index_low=i_lo,
         index_high=i_hi,
+        averaging_period_hours=CPCB_AVERAGING_PERIODS.get(pollutant),
     )
 
 
@@ -265,23 +276,21 @@ def get_grounded_health_advisory(category: AQICategory) -> HealthAdvisory:
 def calculate_cpcb_aqi(obs: EnvironmentalObservationInput) -> AQICalculationResult:
     """
     CPCB National AQI Calculation Engine:
-    1. Evaluates sub-indices for monitored pollutants.
+    1. Evaluates sub-indices for monitored pollutants using piecewise linear interpolation.
     2. Enforces CPCB criteria:
        - At least 3 monitored pollutants required.
        - At least one MUST be PM2.5 or PM10.
     3. If valid:
        - Overall AQI = max(sub_indices).
        - Prominent pollutant = pollutant with max sub-index.
-    4. Evaluates data freshness and flags stale observations.
+    4. Evaluates data freshness using provider-specific threshold.
     """
     now = datetime.now(timezone.utc)
-    obs_time = obs.timestamp
-    if obs_time.tzinfo is None:
-        obs_time = obs_time.replace(tzinfo=timezone.utc)
 
-    # Staleness check
-    age_minutes = (now - obs_time).total_seconds() / 60.0
-    is_stale = age_minutes > settings.DATA_STALE_THRESHOLD_MINUTES
+    # Staleness check with provider-specific threshold
+    is_stale, _ = check_observation_staleness(
+        obs.timestamp, provider_name=obs.provider, data_source_type=obs.data_source_type
+    )
 
     # Gather available concentrations
     candidate_pollutants: Dict[PollutantType, Optional[float]] = {

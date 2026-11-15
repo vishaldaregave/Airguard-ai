@@ -1,6 +1,6 @@
 """
 AirGuard AI - Unit Tests for Deterministic CPCB AQI Calculation Engine
-Validates mathematical correctness against official CPCB India breakpoints.
+Validates mathematical correctness against official CPCB India breakpoints and reference examples.
 """
 from datetime import datetime, timezone, timedelta
 import pytest
@@ -25,20 +25,27 @@ def test_sub_index_pm25_breakpoints():
     res_0 = calculate_sub_index(PollutantType.PM2_5, 0.0)
     assert res_0.sub_index == 0
     assert res_0.category == AQICategory.GOOD
+    assert res_0.averaging_period_hours == 24
 
     res_30 = calculate_sub_index(PollutantType.PM2_5, 30.0)
     assert res_30.sub_index == 50
     assert res_30.category == AQICategory.GOOD
 
-    # Midpoint of Satisfactory: (31 - 60 -> 51 - 100)
-    # At 45 ug/m3: 51 + ((100 - 51) / (60 - 31)) * (45 - 31) = 51 + (49/29)*14 = 51 + 23.65 = 75
+    # Official CPCB Example A:
+    # At 45 µg/m³ PM2.5: (100 - 50)/(60 - 30) * (45 - 30) + 50 = (50/30)*15 + 50 = 25 + 50 = 75
     res_45 = calculate_sub_index(PollutantType.PM2_5, 45.0)
-    assert res_45.sub_index in [74, 75]
+    assert res_45.sub_index == 75
     assert res_45.category == AQICategory.SATISFACTORY
 
-    # Severe: > 250 -> 401 - 500
+    # Official CPCB Example B:
+    # At 150 µg/m³ PM2.5: (400 - 300)/(250 - 120) * (150 - 120) + 300 = (100/130)*30 + 300 = 23.08 + 300 = 323
+    res_150 = calculate_sub_index(PollutantType.PM2_5, 150.0)
+    assert res_150.sub_index == 323
+    assert res_150.category == AQICategory.VERY_POOR
+
+    # Severe: > 250 -> 400 - 500
     res_300 = calculate_sub_index(PollutantType.PM2_5, 300.0)
-    assert res_300.sub_index >= 401
+    assert res_300.sub_index == 450
     assert res_300.category == AQICategory.SEVERE
 
     # Extreme value capping at 500
@@ -51,26 +58,36 @@ def test_sub_index_pm10_breakpoints():
     res = calculate_sub_index(PollutantType.PM10, 50.0)
     assert res.sub_index == 50
     assert res.category == AQICategory.GOOD
+    assert res.averaging_period_hours == 24
 
+    # Moderate range: 100 - 250 -> 100 - 200
+    # At 150: 100 + ((200 - 100) / (250 - 100)) * (150 - 100) = 100 + (100/150)*50 = 100 + 33.33 = 133
     res_mod = calculate_sub_index(PollutantType.PM10, 150.0)
-    # 101-250 -> 101-200. At 150: 101 + ((200 - 101)/(250 - 101))*(150 - 101) = 101 + (99/149)*49 = 134
-    assert res_mod.sub_index == 134
+    assert res_mod.sub_index == 133
     assert res_mod.category == AQICategory.MODERATE
 
 
 def test_sub_index_gases():
-    """Verify SO2, NO2, CO, O3, NH3 calculations."""
+    """Verify SO2, NO2, CO, O3, NH3 calculations and averaging periods."""
     res_co = calculate_sub_index(PollutantType.CO, 1.0)
     assert res_co.sub_index == 50
+    assert res_co.averaging_period_hours == 8
 
     res_no2 = calculate_sub_index(PollutantType.NO2, 40.0)
     assert res_no2.sub_index == 50
+    assert res_no2.averaging_period_hours == 24
 
     res_so2 = calculate_sub_index(PollutantType.SO2, 40.0)
     assert res_so2.sub_index == 50
+    assert res_so2.averaging_period_hours == 24
+
+    res_o3 = calculate_sub_index(PollutantType.O3, 50.0)
+    assert res_o3.sub_index == 50
+    assert res_o3.averaging_period_hours == 8
 
     res_nh3 = calculate_sub_index(PollutantType.NH3, 200.0)
     assert res_nh3.sub_index == 50
+    assert res_nh3.averaging_period_hours == 24
 
 
 def test_cpcb_rule_insufficient_pollutants_under_three():
@@ -117,14 +134,13 @@ def test_valid_cpcb_aqi_calculation():
         timestamp=datetime.now(timezone.utc),
         provider="Central Pollution Control Board",
         data_source_type=DataSourceType.LIVE,
-        pm2_5=110.0,  # Poor (~260-270)
-        pm10=150.0,   # Moderate (~134)
-        no2=45.0,     # Satisfactory (~57)
+        pm2_5=110.0,  # Poor (90-120 -> 200-300: 200 + (100/30)*20 = 267)
+        pm10=150.0,   # Moderate (~133)
+        no2=45.0,     # Satisfactory (~56)
     )
     res = calculate_cpcb_aqi(obs)
     assert res.status == CalculationStatus.VALID
-    assert res.overall_aqi is not None
-    assert res.overall_aqi >= 201 and res.overall_aqi <= 300
+    assert res.overall_aqi == 267
     assert res.category == AQICategory.POOR
     assert res.prominent_pollutant == "PM2.5"
     assert res.monitored_pollutant_count == 3
@@ -132,8 +148,32 @@ def test_valid_cpcb_aqi_calculation():
     assert res.health_advisory is not None
 
 
+def test_official_cpcb_overall_aqi_and_dominant_pollutant():
+    """Official CPCB case: Ip(PM2.5) = 75, Ip(SO2) = 63, Ip(NO2) = 38 -> AQI = 75, Dominant = PM2.5."""
+    # PM2.5 = 45 -> sub_index 75
+    # SO2 = 50 -> (100-50)/(80-40)*(50-40)+50 = (50/40)*10+50 = 12.5+50 = 63
+    # NO2 = 30 -> (50/40)*30 = 38
+    obs = EnvironmentalObservationInput(
+        location=LocationCoordinate(latitude=28.6, longitude=77.2, city="Delhi"),
+        timestamp=datetime.now(timezone.utc),
+        provider="Central Pollution Control Board",
+        data_source_type=DataSourceType.LIVE,
+        pm2_5=45.0,
+        so2=50.0,
+        no2=30.0,
+    )
+    res = calculate_cpcb_aqi(obs)
+    assert res.status == CalculationStatus.VALID
+    assert res.sub_indices["PM2.5"].sub_index == 75
+    assert res.sub_indices["SO2"].sub_index == 63
+    assert res.sub_indices["NO2"].sub_index == 38
+    assert res.overall_aqi == 75
+    assert res.category == AQICategory.SATISFACTORY
+    assert res.prominent_pollutant == "PM2.5"
+
+
 def test_stale_data_detection():
-    """Stale data older than 2 hours is flagged with STALE_DATA status."""
+    """Stale data older than threshold is flagged with STALE_DATA status."""
     stale_time = datetime.now(timezone.utc) - timedelta(hours=3)
     obs = EnvironmentalObservationInput(
         location=LocationCoordinate(latitude=28.6, longitude=77.2, city="Delhi"),
