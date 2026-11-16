@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/models/observation_model.dart';
 import '../controllers/environmental_controller.dart';
+import '../controllers/alert_controller.dart';
 import '../widgets/data_integrity_badge.dart';
 import '../widgets/futuristic_aqi_gauge.dart';
 import '../widgets/pollutant_grid_card.dart';
@@ -12,6 +13,7 @@ import '../widgets/provider_status_sheet.dart';
 import '../widgets/forecast_chart_card.dart';
 import '../widgets/ai_explanation_card.dart';
 import 'station_selector_sheet.dart';
+import 'alert_inbox_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -64,6 +66,48 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          // Environmental Alerts Inbox Button with Unread Badge
+          Consumer(
+            builder: (context, ref, _) {
+              final alertState = ref.watch(alertControllerProvider);
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const AlertInboxScreen()),
+                      );
+                    },
+                    icon: const Icon(Icons.notifications_outlined, color: AppColors.cyanAccent),
+                    tooltip: 'Environmental Alerts',
+                  ),
+                  if (alertState.unreadCount > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: AppColors.aqiPoor,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          '${alertState.unreadCount}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
           IconButton(
             onPressed: () {
               showModalBottomSheet(

@@ -1,6 +1,7 @@
 """
 AirGuard AI - Database Models
-Stores verified environmental observations, historical archives, and forecast records.
+Stores verified environmental observations, historical archives, forecast records,
+and user alert preferences, device tokens, and environmental notifications.
 Strict separation of provenance: LIVE, HISTORICAL, ESTIMATED, FORECAST, DEMO_FIXTURE.
 """
 from datetime import datetime, timezone
@@ -131,4 +132,111 @@ class ForecastRecord(Base):
     __table_args__ = (
         Index("idx_forecast_target", "station_id", "target_timestamp"),
         Index("idx_forecast_gen_horizon", "station_id", "forecast_generated_at", "horizon_hours"),
+    )
+
+
+class UserAlertPreference(Base):
+    """Stores user environmental notification configurations and thresholds."""
+    __tablename__ = "user_alert_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(64), unique=True, index=True, nullable=False)
+    notifications_enabled = Column(Boolean, default=True, nullable=False)
+    aqi_threshold = Column(Integer, default=200, nullable=False)
+    pm25_threshold = Column(Float, default=60.0, nullable=False)
+    pm10_threshold = Column(Float, default=100.0, nullable=False)
+    sudden_deterioration_enabled = Column(Boolean, default=True, nullable=False)
+    forecast_alerts_enabled = Column(Boolean, default=True, nullable=False)
+    recovery_alerts_enabled = Column(Boolean, default=True, nullable=False)
+    quiet_hours_enabled = Column(Boolean, default=False, nullable=False)
+    quiet_hours_start = Column(Integer, default=22, nullable=False)  # 22:00 (10 PM)
+    quiet_hours_end = Column(Integer, default=7, nullable=False)      # 07:00 (7 AM)
+    preferred_station_code = Column(String(64), nullable=True)
+    preferred_station_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class DeviceToken(Base):
+    """Stores client device push notification tokens for FCM."""
+    __tablename__ = "device_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    token = Column(String(255), unique=True, index=True, nullable=False)
+    device_type = Column(String(32), default="android", nullable=False)  # android, ios, web
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("idx_device_user_active", "user_id", "is_active"),
+    )
+
+
+class AlertRecord(Base):
+    """Historical log of triggered environmental alerts."""
+    __tablename__ = "alert_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alert_id = Column(String(64), unique=True, index=True, nullable=False)
+    user_id = Column(String(64), index=True, nullable=False)
+    alert_type = Column(String(32), index=True, nullable=False)
+    severity = Column(String(16), nullable=False)  # INFO, WARNING, DANGER, CRITICAL
+    station_code = Column(String(64), index=True, nullable=False)
+    station_name = Column(String(255), nullable=False)
+    pollutant = Column(String(32), nullable=True)
+    observed_value = Column(Float, nullable=True)
+    threshold_value = Column(Float, nullable=True)
+    unit = Column(String(16), default="µg/m³", nullable=False)
+    source_provenance = Column(String(32), default="LIVE", nullable=False)
+    observation_timestamp = Column(DateTime(timezone=True), nullable=False)
+    trigger_reason = Column(Text, nullable=False)
+    recommended_precaution = Column(Text, nullable=False)
+    is_forecast = Column(Boolean, default=False, nullable=False)
+    forecast_horizon_hours = Column(Integer, nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    is_resolved = Column(Boolean, default=False, nullable=False)
+    delivery_status = Column(String(32), default="DELIVERED", nullable=False)  # DELIVERED, MOCK_DELIVERED, FAILED
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("idx_alert_user_time", "user_id", "created_at"),
+        Index("idx_alert_user_read", "user_id", "is_read"),
+    )
+
+
+class AlertStateTracker(Base):
+    """Tracks active alert state per user and station to govern cooldown, escalation, and recovery."""
+    __tablename__ = "alert_state_trackers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    station_code = Column(String(64), index=True, nullable=False)
+    alert_type = Column(String(32), index=True, nullable=False)
+    last_alert_id = Column(String(64), nullable=True)
+    last_triggered_at = Column(DateTime(timezone=True), nullable=True)
+    last_observed_value = Column(Float, nullable=True)
+    last_severity = Column(String(16), nullable=True)
+    is_active = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("idx_tracker_user_station_type", "user_id", "station_code", "alert_type", unique=True),
     )

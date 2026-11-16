@@ -1,3 +1,4 @@
+import 'package:airguard_ai/features/environmental_intelligence/domain/models/alert_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:airguard_ai/main.dart';
@@ -207,6 +208,54 @@ class MockEnvironmentalRepository extends EnvironmentalRepository {
         latencyMs: 120.0,
       ),
     ];
+  }
+
+  @override
+  Future<AlertListResponse> getAlerts({
+    bool unreadOnly = false,
+    String? severity,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    return const AlertListResponse(alerts: [], total: 0, unreadCount: 0);
+  }
+
+  @override
+  Future<UserAlertPreference> getUserPreferences() async {
+    return UserAlertPreference(
+      userId: 'test_user',
+      notificationsEnabled: true,
+      aqiThreshold: 200,
+      pm25Threshold: 60.0,
+      pm10Threshold: 100.0,
+      suddenDeteriorationEnabled: true,
+      forecastAlertsEnabled: true,
+      recoveryAlertsEnabled: true,
+      quietHoursEnabled: false,
+      quietHoursStart: 22,
+      quietHoursEnd: 7,
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<UserAlertPreference> updateUserPreferences(UserAlertPreference preferences) async {
+    return preferences;
+  }
+
+  @override
+  Future<bool> markAlertRead(String alertId) async {
+    return true;
+  }
+
+  @override
+  Future<bool> registerDeviceToken(String token, {String deviceType = 'android'}) async {
+    return true;
+  }
+
+  @override
+  Future<bool> unregisterDeviceToken(String token) async {
+    return true;
   }
 }
 

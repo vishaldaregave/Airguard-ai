@@ -24,6 +24,12 @@ class ApiConstants {
   static const String aiExplain = '/api/v1/ai/explain';
   static const String historyAvailability = '/api/v1/history/availability';
 
+  // Milestone 4 Alert & Notification endpoints
+  static const String alerts = '/api/v1/alerts';
+  static const String alertPreferences = '/api/v1/alerts/preferences';
+  static const String alertDeviceRegister = '/api/v1/alerts/device/register';
+  static const String alertDeviceUnregister = '/api/v1/alerts/device/unregister';
+
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
 }

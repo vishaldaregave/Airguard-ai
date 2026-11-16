@@ -8,6 +8,7 @@ import '../../domain/models/station_model.dart';
 import '../../domain/models/forecast_model.dart';
 import '../../domain/models/ai_explanation_model.dart';
 import '../../domain/models/history_availability_model.dart';
+import '../../domain/models/alert_model.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient();
@@ -172,6 +173,107 @@ class EnvironmentalRepository {
           .toList();
     } catch (e) {
       return [];
+    }
+  }
+
+  // ==========================================
+  // Milestone 4: Environmental Alerts & Engine
+  // ==========================================
+
+  /// Retrieves user's environmental alert inbox & history
+  Future<AlertListResponse> getAlerts({
+    bool unreadOnly = false,
+    String? severity,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'unread_only': unreadOnly,
+        'limit': limit,
+        'offset': offset,
+      };
+      if (severity != null) queryParams['severity'] = severity;
+
+      final response = await _client.get(
+        ApiConstants.alerts,
+        queryParameters: queryParams,
+      );
+      return AlertListResponse.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      return const AlertListResponse(alerts: [], total: 0, unreadCount: 0);
+    }
+  }
+
+  /// Retrieves user notification configuration and thresholds
+  Future<UserAlertPreference> getUserPreferences() async {
+    try {
+      final response = await _client.get(ApiConstants.alertPreferences);
+      return UserAlertPreference.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      return UserAlertPreference(
+        userId: 'default_user',
+        notificationsEnabled: true,
+        aqiThreshold: 200,
+        pm25Threshold: 60.0,
+        pm10Threshold: 100.0,
+        suddenDeteriorationEnabled: true,
+        forecastAlertsEnabled: true,
+        recoveryAlertsEnabled: true,
+        quietHoursEnabled: false,
+        quietHoursStart: 22,
+        quietHoursEnd: 7,
+        updatedAt: DateTime.now(),
+      );
+    }
+  }
+
+  /// Updates user notification configuration and thresholds
+  Future<UserAlertPreference> updateUserPreferences(UserAlertPreference prefs) async {
+    try {
+      final response = await _client.put(
+        ApiConstants.alertPreferences,
+        data: prefs.toJson(),
+      );
+      return UserAlertPreference.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      return prefs;
+    }
+  }
+
+  /// Marks a specific alert as read
+  Future<bool> markAlertRead(String alertId) async {
+    try {
+      final response = await _client.patch('${ApiConstants.alerts}/$alertId/read');
+      return (response.data['is_read'] as bool?) ?? true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Registers client FCM device token
+  Future<bool> registerDeviceToken(String token, {String deviceType = 'android'}) async {
+    try {
+      final response = await _client.post(
+        ApiConstants.alertDeviceRegister,
+        data: {'token': token, 'device_type': deviceType},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Revokes client FCM device token
+  Future<bool> unregisterDeviceToken(String token) async {
+    try {
+      final response = await _client.delete(
+        ApiConstants.alertDeviceUnregister,
+        data: {'token': token},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
     }
   }
 

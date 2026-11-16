@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AirGuard AI"
-    VERSION: str = "1.2.0"
+    VERSION: str = "1.3.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     # 4. LLM Explainer Configurations (Backend-only credentials)
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+
+    # 5. Firebase Cloud Messaging Configuration
+    FIREBASE_CREDENTIALS_PATH: Optional[str] = None
+    FIREBASE_PROJECT_ID: Optional[str] = None
+
+    # 6. Environmental Alert Engine Defaults
+    ALERT_DEFAULT_AQI_THRESHOLD: int = 200        # Poor CPCB threshold
+    ALERT_DEFAULT_PM25_THRESHOLD: float = 60.0    # 24-hr CPCB standard
+    ALERT_DEFAULT_PM10_THRESHOLD: float = 100.0   # 24-hr CPCB standard
+    ALERT_COOLDOWN_MINUTES: int = 180              # 3 hours cooldown for same severity/pollutant
+    ALERT_ESCALATION_DELTA_AQI: int = 50          # Jump of 50 AQI bypasses cooldown
+    ALERT_SPIKE_DELTA_AQI: int = 40               # Sudden deterioration in <= 3 hours
+    ALERT_SPIKE_RATIO_PM25: float = 0.50          # 50% jump in PM2.5 in <= 3 hours
+    ALERT_STALE_DATA_HOURS: float = 6.0           # Telemetry older than 6 hours considered stale
 
     # Caching and Rate-limiting TTLs
     CACHE_STATIONS_TTL_SECONDS: int = 3600      # 1 hour
