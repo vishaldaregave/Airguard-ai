@@ -240,3 +240,21 @@ class AlertStateTracker(Base):
     __table_args__ = (
         Index("idx_tracker_user_station_type", "user_id", "station_code", "alert_type", unique=True),
     )
+
+
+class EvaluatedObservationLog(Base):
+    """Records evaluated environmental observations to enforce worker idempotency."""
+    __tablename__ = "evaluated_observation_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    eval_hash = Column(String(64), unique=True, index=True, nullable=False)
+    station_code = Column(String(64), index=True, nullable=False)
+    observation_timestamp = Column(DateTime(timezone=True), index=True, nullable=False)
+    evaluated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    matched_subscriptions_count = Column(Integer, default=0, nullable=False)
+    dispatched_alerts_count = Column(Integer, default=0, nullable=False)
+    data_source_type = Column(String(32), default="LIVE", nullable=False)
+
+    __table_args__ = (
+        Index("idx_eval_station_time", "station_code", "observation_timestamp"),
+    )

@@ -101,3 +101,37 @@ class AlertReadResponse(BaseModel):
     alert_id: str = Field(..., description="Updated alert UUID")
     is_read: bool = Field(True, description="Current read status")
     message: str = Field("Alert marked as read.", description="Outcome description")
+
+
+class DeviceTokenRefreshRequest(BaseModel):
+    old_token: str = Field(..., min_length=10, max_length=512, description="Existing active FCM token")
+    new_token: str = Field(..., min_length=10, max_length=512, description="Newly rotated FCM token")
+    device_type: DeviceType = Field(DeviceType.ANDROID, description="Client platform")
+
+
+class TokenAuthRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=64, description="User identifier to generate access token for")
+
+
+class TokenAuthResponse(BaseModel):
+    access_token: str = Field(..., description="Signed JWT Bearer access token")
+    token_type: str = Field("bearer", description="Token schema type")
+    user_id: str = Field(..., description="Authenticated user identifier")
+    expires_in_seconds: int = Field(..., description="Access token TTL in seconds")
+
+
+class AlertMonitoringStatusResponse(BaseModel):
+    worker_health: str = Field(..., description="Operational status: HEALTHY, DEGRADED, ERROR")
+    evaluations_total_count: int = Field(0, description="Total telemetry evaluations performed")
+    alerts_triggered_count: int = Field(0, description="Total alerts triggered across users")
+    idempotent_skips_count: int = Field(0, description="Duplicate observations skipped idempotently")
+    pending_notifications_count: int = Field(0, description="Pending dispatches in worker queue")
+    successful_deliveries_count: int = Field(0, description="Notifications successfully delivered")
+    failed_deliveries_count: int = Field(0, description="Notification delivery failures")
+    invalid_device_tokens_count: int = Field(0, description="Invalid or unregistered tokens flagged")
+    last_evaluated_station: Optional[str] = Field(None, description="Station code evaluated most recently")
+    last_evaluation_timestamp: Optional[str] = Field(None, description="ISO timestamp of last evaluation")
+    last_environmental_data_ingestion: Optional[str] = Field(None, description="ISO timestamp of last ingestion")
+    last_error: Optional[str] = Field(None, description="Most recent operational error summary")
+    last_error_timestamp: Optional[str] = Field(None, description="ISO timestamp of most recent error")
+    fcm_mode: str = Field("MOCK_UNVERIFIED", description="Firebase Cloud Messaging transport mode")

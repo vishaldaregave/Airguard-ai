@@ -5,8 +5,9 @@ Tests:
 - GET /api/v1/alerts/preferences (defaults & persistence)
 - PUT /api/v1/alerts/preferences (validation & updating)
 - POST /api/v1/alerts/device/register & DELETE /api/v1/alerts/device/unregister
+- POST /api/v1/alerts/device/refresh (token rotation)
 - PATCH /api/v1/alerts/{alert_id}/read
-- User isolation & authorization via X-User-ID header
+- User isolation & authorization via JWT Bearer tokens
 - Firebase mock fallback & delivery verification status
 """
 
@@ -16,15 +17,25 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.security import create_access_token
 from app.services.fcm_service import fcm_service
 
 client = TestClient(app)
 
 
+def get_auth_headers(user_id: str) -> dict:
+    """Helper to generate valid JWT Bearer authentication headers for test users."""
+    token = create_access_token(user_id=user_id)
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-User-ID": user_id,
+    }
+
+
 def test_get_and_put_preferences():
     """Test retrieving default preferences and updating them with valid thresholds."""
     unique_user = f"user_pref_{uuid.uuid4().hex[:8]}"
-    user_header = {"X-User-ID": unique_user}
+    user_header = get_auth_headers(unique_user)
 
     # 1. GET default preferences
     resp = client.get("/api/v1/alerts/preferences", headers=user_header)
@@ -66,21 +77,24 @@ def test_get_and_put_preferences():
 
 def test_user_isolation_for_preferences():
     """Verify that User A cannot see or modify User B's preferences."""
+    user_alice = f"alice_{uuid.uuid4().hex[:6]}"
+    user_bob = f"bob_{uuid.uuid4().hex[:6]}"
+
     # User A sets aqi_threshold = 120
     client.put(
         "/api/v1/alerts/preferences",
         json={"notifications_enabled": True, "aqi_threshold": 120, "pm25_threshold": 40.0, "pm10_threshold": 80.0},
-        headers={"X-User-ID": "user_alice"},
+        headers=get_auth_headers(user_alice),
     )
     # User B sets aqi_threshold = 280
     client.put(
         "/api/v1/alerts/preferences",
         json={"notifications_enabled": True, "aqi_threshold": 280, "pm25_threshold": 75.0, "pm10_threshold": 120.0},
-        headers={"X-User-ID": "user_bob"},
+        headers=get_auth_headers(user_bob),
     )
 
-    resp_alice = client.get("/api/v1/alerts/preferences", headers={"X-User-ID": "user_alice"}).json()
-    resp_bob = client.get("/api/v1/alerts/preferences", headers={"X-User-ID": "user_bob"}).json()
+    resp_alice = client.get("/api/v1/alerts/preferences", headers=get_auth_headers(user_alice)).json()
+    resp_bob = client.get("/api/v1/alerts/preferences", headers=get_auth_headers(user_bob)).json()
 
     assert resp_alice["aqi_threshold"] == 120
     assert resp_bob["aqi_threshold"] == 280
@@ -89,8 +103,9 @@ def test_user_isolation_for_preferences():
 def test_device_token_lifecycle():
     """Test registering, refreshing, and unregistering FCM device push tokens."""
     unique_user = f"user_device_{uuid.uuid4().hex[:8]}"
-    user_header = {"X-User-ID": unique_user}
+    user_header = get_auth_headers(unique_user)
     token_str = f"fcm_test_token_{uuid.uuid4().hex}"
+    new_token_str = f"fcm_rotated_token_{uuid.uuid4().hex}"
 
     # 1. Register device
     reg_resp = client.post(
@@ -104,17 +119,27 @@ def test_device_token_lifecycle():
     assert data["status"] == "REGISTERED"
     assert data["is_active"] is True
 
-    # 2. Unregister device
+    # 2. Refresh / rotate device token
+    refresh_resp = client.post(
+        "/api/v1/alerts/device/refresh",
+        json={"old_token": token_str, "new_token": new_token_str, "device_type": "android"},
+        headers=user_header,
+    )
+    assert refresh_resp.status_code == 200
+    assert refresh_resp.json()["status"] == "REFRESHED"
+    assert refresh_resp.json()["token"] == new_token_str
+
+    # 3. Unregister new device token
     unreg_resp = client.request(
         "DELETE",
         "/api/v1/alerts/device/unregister",
-        json={"token": token_str},
+        json={"token": new_token_str},
         headers=user_header,
     )
     assert unreg_resp.status_code == 200
     assert unreg_resp.json()["status"] == "UNREGISTERED"
 
-    # 3. Unregister again returns 404
+    # 4. Unregister again returns 404
     unreg_again = client.request(
         "DELETE",
         "/api/v1/alerts/device/unregister",
@@ -127,7 +152,7 @@ def test_device_token_lifecycle():
 def test_evaluate_and_mark_alert_read():
     """Test generating alerts via evaluate endpoint and marking them as read."""
     unique_user = f"user_eval_{uuid.uuid4().hex[:8]}"
-    user_header = {"X-User-ID": unique_user}
+    user_header = get_auth_headers(unique_user)
 
     # Set threshold low to ensure trigger
     client.put(
@@ -174,7 +199,8 @@ def test_evaluate_and_mark_alert_read():
     assert read_resp.json()["is_read"] is True
 
     # User isolation: Another user cannot mark this alert as read
-    other_read_resp = client.patch(f"/api/v1/alerts/{alert_id}/read", headers={"X-User-ID": "user_charlie"})
+    charlie_header = get_auth_headers("user_charlie")
+    other_read_resp = client.patch(f"/api/v1/alerts/{alert_id}/read", headers=charlie_header)
     assert other_read_resp.status_code == 404
 
 

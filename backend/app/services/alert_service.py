@@ -29,6 +29,8 @@ from app.schemas.aqi import AQICalculationResult
 from app.schemas.forecast import ForecastCurrentResponse
 from app.engine.alert_engine import alert_engine, AlertCandidate
 from app.services.fcm_service import fcm_service
+from app.services.alert_monitor import alert_monitor
+from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,49 @@ class AlertService:
             db.commit()
             return True
         return False
+
+
+    def refresh_device_token(
+        self,
+        db: Session,
+        user_id: str,
+        old_token: str,
+        new_token: str,
+        device_type: str = "android",
+    ) -> DeviceToken:
+        """Rotate FCM device registration token for authenticated user."""
+        old_record = db.query(DeviceToken).filter(
+            DeviceToken.token == old_token,
+            DeviceToken.user_id == user_id,
+        ).first()
+
+        if not old_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Original device token not found for this user",
+            )
+
+        old_record.is_active = False
+        old_record.updated_at = datetime.now(timezone.utc)
+
+        new_record = db.query(DeviceToken).filter(DeviceToken.token == new_token).first()
+        if new_record:
+            new_record.user_id = user_id
+            new_record.device_type = device_type
+            new_record.is_active = True
+            new_record.updated_at = datetime.now(timezone.utc)
+        else:
+            new_record = DeviceToken(
+                user_id=user_id,
+                token=new_token,
+                device_type=device_type,
+                is_active=True,
+            )
+            db.add(new_record)
+
+        db.commit()
+        db.refresh(new_record)
+        return new_record
 
     def get_active_tokens_for_user(self, db: Session, user_id: str) -> List[str]:
         """Fetch all active FCM device tokens for a given user."""
@@ -265,19 +310,30 @@ class AlertService:
                 logger.debug("Alert suppressed: %s (%s)", candidate.alert_type.value, reason)
                 continue
 
-            # FCM delivery (real or mock)
-            fcm_result = fcm_service.send_multicast(
-                tokens=active_tokens,
-                title=f"AIRGUARD: {candidate.severity.value} Alert - {candidate.station_name}",
-                body=f"{candidate.trigger_reason} Rec: {candidate.recommended_precaution}",
-                data={
-                    "alert_id": candidate.alert_id,
-                    "alert_type": candidate.alert_type.value,
-                    "severity": candidate.severity.value,
-                    "station_code": candidate.station_code,
-                    "observed_value": str(candidate.observed_value),
-                },
-            )
+            if reason == "QUIET_HOURS_SUPPRESSED":
+                delivery_status = "QUIET_HOURS_SUPPRESSED"
+            else:
+                fcm_result = fcm_service.send_multicast(
+                    tokens=active_tokens,
+                    title=f"AIRGUARD: {candidate.severity.value} Alert - {candidate.station_name}",
+                    body=f"{candidate.trigger_reason} Rec: {candidate.recommended_precaution}",
+                    data={
+                        "alert_id": candidate.alert_id,
+                        "alert_type": candidate.alert_type.value,
+                        "severity": candidate.severity.value,
+                        "station_code": candidate.station_code,
+                        "observed_value": str(candidate.observed_value),
+                    },
+                )
+                delivery_status = fcm_result.delivery_status
+                alert_monitor.record_delivery(
+                    success_count=fcm_result.success_count,
+                    failure_count=fcm_result.failure_count,
+                )
+                for detail in fcm_result.details:
+                    err_str = str(detail.get("error", "")).lower()
+                    if any(w in err_str for w in ["not registered", "invalid", "unregistered"]):
+                        alert_monitor.record_invalid_token()
 
             # Persist AlertRecord
             record = AlertRecord(
@@ -299,7 +355,7 @@ class AlertService:
                 forecast_horizon_hours=candidate.forecast_horizon_hours,
                 is_read=False,
                 is_resolved=candidate.is_recovery,
-                delivery_status=fcm_result.delivery_status,
+                delivery_status=delivery_status,
             )
             db.add(record)
 

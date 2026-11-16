@@ -110,6 +110,8 @@ CONVERSION_FACTORS = STANDARD_REFERENCE_FACTORS
 PROVIDER_STALENESS_THRESHOLDS_MINUTES: Dict[str, float] = {
     "openaq": 120.0,
     "open_meteo": 90.0,
+    "open-meteo": 90.0,
+    "cpcb": 180.0,
     "cpcb_datagov": 180.0,
     "demo_fixtures": 120.0,
 }
@@ -289,8 +291,10 @@ def check_observation_staleness(
     # Determine threshold
     threshold = settings.DATA_STALE_THRESHOLD_MINUTES
     if provider_name:
+        clean_p = provider_name.lower().replace("-", "_").replace(" ", "_")
         for p_key, p_thresh in PROVIDER_STALENESS_THRESHOLDS_MINUTES.items():
-            if p_key in provider_name.lower():
+            clean_k = p_key.lower().replace("-", "_").replace(" ", "_")
+            if clean_k in clean_p or clean_p in clean_k:
                 threshold = p_thresh
                 break
 

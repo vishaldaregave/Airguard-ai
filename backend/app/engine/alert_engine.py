@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import uuid
 
 from app.core.config import settings
+from app.services.quality import check_observation_staleness, PROVIDER_STALENESS_THRESHOLDS_MINUTES
 from app.schemas.pollutant import DataSourceType, EnvironmentalObservationInput
 from app.schemas.aqi import AQICalculationResult, AQICategory, CalculationStatus
 from app.schemas.forecast import ForecastCurrentResponse, HorizonForecastStep
@@ -109,20 +110,25 @@ class EnvironmentalAlertEngine:
         """
         candidates: List[AlertCandidate] = []
 
-        # STRICT INTEGRITY: Never send alerts from DEMO_FIXTURE data to real users
-        if obs.data_source_type == DataSourceType.DEMO_FIXTURE:
+        # STRICT INTEGRITY: Never send live alerts from DEMO_FIXTURE or HISTORICAL data to real users
+        if obs.data_source_type in (DataSourceType.DEMO_FIXTURE, DataSourceType.HISTORICAL):
             return []
 
         station_code = obs.station_id or f"GRID-{obs.location.latitude:.2f}-{obs.location.longitude:.2f}"
         station_name = obs.station_name or f"Monitoring Station ({station_code})"
-        provenance = obs.data_source_type.value
+        provider_name = obs.provider or "Physical Station"
+        provenance = f"{provider_name} ({obs.data_source_type.value})"
         obs_time = obs.timestamp if obs.timestamp.tzinfo else obs.timestamp.replace(tzinfo=timezone.utc)
 
-        # 1. Stale Data Check
-        now_utc = datetime.now(timezone.utc)
-        age_hours = (now_utc - obs_time).total_seconds() / 3600.0
-        if age_hours > float(settings.ALERT_STALE_DATA_HOURS):
-            # Suppress normal threshold alerts on stale data, but generate data freshness notice if enabled
+        # 1. Provider-Aware Freshness and Timestamp Anomaly Validation
+        is_stale, age_minutes = check_observation_staleness(
+            timestamp=obs_time,
+            provider_name=obs.provider,
+            data_source_type=obs.data_source_type,
+        )
+
+        # Future-dated check (clock anomaly / uncalibrated timestamp)
+        if age_minutes < -5.0 and obs.data_source_type != DataSourceType.FORECAST:
             candidates.append(
                 AlertCandidate(
                     alert_type=AlertType.DATA_FRESHNESS,
@@ -130,12 +136,45 @@ class EnvironmentalAlertEngine:
                     station_code=station_code,
                     station_name=station_name,
                     pollutant=None,
-                    observed_value=round(age_hours, 1),
-                    threshold_value=float(settings.ALERT_STALE_DATA_HOURS),
+                    observed_value=round(-age_minutes, 1),
+                    threshold_value=0.0,
+                    unit="minutes",
+                    source_provenance=provenance,
+                    observation_timestamp=obs_time,
+                    trigger_reason=f"Station telemetry has a future timestamp (advanced by {-age_minutes:.1f} min). Live alerts are suppressed to prevent clock-anomaly false triggers.",
+                    recommended_precaution="Data stream clock synchronization required. Live observation alerts are paused.",
+                )
+            )
+            return candidates
+
+        # Provider-specific staleness check
+        if is_stale:
+            # Determine applicable provider threshold in minutes
+            provider_thresh_min = settings.DATA_STALE_THRESHOLD_MINUTES
+            if obs.provider:
+                clean_p = obs.provider.lower().replace("-", "_").replace(" ", "_")
+                for p_key, p_thresh in PROVIDER_STALENESS_THRESHOLDS_MINUTES.items():
+                    clean_k = p_key.lower().replace("-", "_").replace(" ", "_")
+                    if clean_k in clean_p or clean_p in clean_k:
+                        provider_thresh_min = p_thresh
+                        break
+
+            age_hours = round(max(0.0, age_minutes) / 60.0, 1)
+            thresh_hours = round(provider_thresh_min / 60.0, 1)
+
+            candidates.append(
+                AlertCandidate(
+                    alert_type=AlertType.DATA_FRESHNESS,
+                    severity=AlertSeverity.INFO,
+                    station_code=station_code,
+                    station_name=station_name,
+                    pollutant=None,
+                    observed_value=age_hours,
+                    threshold_value=thresh_hours,
                     unit="hours",
                     source_provenance=provenance,
                     observation_timestamp=obs_time,
-                    trigger_reason=f"Station telemetry is outdated by {age_hours:.1f} hours. Real-time alerts are paused until fresh data arrives.",
+                    trigger_reason=f"Station telemetry from {provider_name} is outdated by {age_hours:.1f} hours (provider threshold: {thresh_hours:.1f}h). Real-time alerts are paused until fresh data arrives.",
                     recommended_precaution="Rely on regional satellite or model-estimated values until physical station telemetry resumes.",
                 )
             )

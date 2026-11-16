@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     ALERT_SPIKE_RATIO_PM25: float = 0.50          # 50% jump in PM2.5 in <= 3 hours
     ALERT_STALE_DATA_HOURS: float = 6.0           # Telemetry older than 6 hours considered stale
 
+    # 7. Authentication & JWT Security Settings
+    JWT_SECRET_KEY: str = "airguard-ai-development-jwt-secret-key-2026"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080   # 7 days
+
     # Caching and Rate-limiting TTLs
     CACHE_STATIONS_TTL_SECONDS: int = 3600      # 1 hour
     CACHE_OBSERVATIONS_TTL_SECONDS: int = 900   # 15 minutes

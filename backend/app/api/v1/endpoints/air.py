@@ -2,7 +2,7 @@
 AirGuard AI - Air Quality Observation & Status Endpoints
 """
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
 from app.schemas.pollutant import EnvironmentalObservationInput
 from app.schemas.provider import (
@@ -11,6 +11,7 @@ from app.schemas.provider import (
     ProviderStatusResponse,
 )
 from app.services.environmental_service import environmental_service
+from app.services.alert_worker import trigger_background_alert_evaluation
 
 router = APIRouter()
 
@@ -22,13 +23,14 @@ router = APIRouter()
     description=(
         "Retrieves current air quality for either a specific station_id or GPS coordinates. "
         "Returns normalized pollutant measurements, CPCB IND-AQI calculation, explainable exposure risk, "
-        "and data freshness/provenance indicators."
+        "and data freshness/provenance indicators. Automatically triggers background alert evaluation."
     ),
 )
 async def get_current_air(
     station_id: Optional[str] = Query(None, description="Station identifier (e.g. OPENAQ-1234, DEMO-DELHI-001)"),
     lat: Optional[float] = Query(None, ge=-90.0, le=90.0, description="User latitude"),
     lon: Optional[float] = Query(None, ge=-180.0, le=180.0, description="User longitude"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> CurrentAirQualityResponse:
     if not station_id and (lat is None or lon is None):
         raise HTTPException(
@@ -44,6 +46,11 @@ async def get_current_air(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Environmental observation not available for the requested location or station.",
         )
+
+    # Automatically trigger non-blocking alert evaluation for subscribers
+    if res.observation:
+        background_tasks.add_task(trigger_background_alert_evaluation, res.observation)
+
     return res
 
 
