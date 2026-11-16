@@ -14,6 +14,7 @@ import '../widgets/forecast_chart_card.dart';
 import '../widgets/ai_explanation_card.dart';
 import 'station_selector_sheet.dart';
 import 'alert_inbox_screen.dart';
+import 'geo_map_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -66,6 +67,16 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          // Geographic Intelligence & Spatial Map (Milestone 5.1)
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GeoMapScreen()),
+              );
+            },
+            icon: const Icon(Icons.map_outlined, color: AppColors.cyanAccent),
+            tooltip: 'Geographic Intelligence & Spatial Map',
+          ),
           // Environmental Alerts Inbox Button with Unread Badge
           Consumer(
             builder: (context, ref, _) {

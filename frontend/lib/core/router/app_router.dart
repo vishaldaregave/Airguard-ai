@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/environmental_intelligence/presentation/screens/dashboard_screen.dart';
 import '../../features/environmental_intelligence/presentation/screens/alert_inbox_screen.dart';
 import '../../features/environmental_intelligence/presentation/screens/alert_preferences_screen.dart';
+import '../../features/environmental_intelligence/presentation/screens/geo_map_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -17,6 +18,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/alerts/preferences',
       builder: (context, state) => const AlertPreferencesScreen(),
+    ),
+    GoRoute(
+      path: '/geo',
+      builder: (context, state) => const GeoMapScreen(),
     ),
   ],
 );

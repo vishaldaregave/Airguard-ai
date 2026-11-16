@@ -30,6 +30,13 @@ class ApiConstants {
   static const String alertDeviceRegister = '/api/v1/alerts/device/register';
   static const String alertDeviceUnregister = '/api/v1/alerts/device/unregister';
 
+  // Milestone 5 Geographic Intelligence endpoints
+  static const String geoStations = '/api/v1/geo/stations';
+  static const String geoObservations = '/api/v1/geo/observations';
+  static const String geoInterpolation = '/api/v1/geo/interpolation';
+  static const String geoHotspots = '/api/v1/geo/hotspots';
+  static const String geoCoverage = '/api/v1/geo/coverage';
+
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
 }
