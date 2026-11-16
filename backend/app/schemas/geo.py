@@ -155,6 +155,7 @@ class HotspotCluster(BaseModel):
     radius_km: float = Field(..., ge=0.0, description="Spatial span / bounding radius of cluster in km")
     severity: HotspotSeverity = Field(..., description="Classification of cluster severity")
     contributing_stations_count: int = Field(..., ge=1, description="Number of reporting stations in cluster")
+    physical_stations_count: int = Field(default=1, ge=0, description="Count of physical ground monitors contributing")
     is_confirmed_hotspot: bool = Field(
         ..., description="True if confirmed by >= 2 stations. False if isolated single station"
     )
@@ -168,8 +169,9 @@ class HotspotCluster(BaseModel):
     )
     explanation: str = Field(..., description="Evidence and rationale for hotspot designation")
     disclaimer: str = Field(
-        "Hotspot clusters represent spatial groupings of elevated station readings, "
-        "not precise geographic dispersion plumes or micro-boundary lines.",
+        "Hotspot clusters represent spatial groupings of elevated station observations, "
+        "not uniform dispersion plumes. Chain-connected clusters do not indicate uniform pollution "
+        "across the entire bounding area.",
         description="Scientific interpretation disclaimer",
     )
     detected_at: datetime = Field(..., description="Timestamp of cluster detection in UTC")

@@ -127,6 +127,8 @@ class HotspotDetectionService:
 
         for cluster_members in clusters:
             count = len(cluster_members)
+            physical_count = sum(1 for m in cluster_members if m.station_type == StationType.PHYSICAL_MONITOR)
+
             # Calculate centroid
             sum_lat = sum(m.location.latitude for m in cluster_members)
             sum_lon = sum(m.location.longitude for m in cluster_members)
@@ -158,7 +160,7 @@ class HotspotDetectionService:
             dominant_pol = max(dominant_counts.keys(), key=lambda k: dominant_counts[k]) if dominant_counts else "PM2.5"
 
             # Provenance determination: LIVE if all physical, ESTIMATED if model grids present
-            all_physical = all(m.station_type == StationType.PHYSICAL_MONITOR for m in cluster_members)
+            all_physical = (physical_count == count)
             provenance = DataSourceType.LIVE if all_physical else DataSourceType.ESTIMATED
 
             station_ids = [m.station_id for m in cluster_members]
@@ -178,10 +180,18 @@ class HotspotDetectionService:
                 else:
                     severity = HotspotSeverity.ELEVATED_CLUSTER
 
+                chain_note = (
+                    " Note: Multi-station spatial cluster bounds reflect network chain connectivity "
+                    "and do not imply uniform pollution levels throughout the geographic bounding area."
+                    if cluster_radius > 10.0
+                    else ""
+                )
+
                 explanation = (
                     f"Confirmed spatial pollution cluster verified by {count} distinct monitoring stations "
-                    f"({', '.join(station_names[:3])}{'...' if count > 3 else ''}) spanning {cluster_radius:.1f} km. "
-                    f"Peak observed AQI is {peak_aqi or 'N/A'} (mean: {mean_aqi or 'N/A'}) driven by {dominant_pol}."
+                    f"({physical_count} physical monitors) ({', '.join(station_names[:3])}{'...' if count > 3 else ''}) "
+                    f"spanning {cluster_radius:.1f} km. "
+                    f"Peak observed AQI is {peak_aqi or 'N/A'} (mean: {mean_aqi or 'N/A'}) driven by {dominant_pol}.{chain_note}"
                 )
             else:
                 is_confirmed = False
@@ -203,6 +213,7 @@ class HotspotDetectionService:
                     radius_km=cluster_radius,
                     severity=severity,
                     contributing_stations_count=count,
+                    physical_stations_count=physical_count,
                     is_confirmed_hotspot=is_confirmed,
                     peak_aqi=peak_aqi,
                     mean_aqi=mean_aqi,

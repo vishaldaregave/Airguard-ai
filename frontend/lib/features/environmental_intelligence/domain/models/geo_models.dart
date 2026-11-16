@@ -399,6 +399,7 @@ class HotspotClusterModel {
   final double radiusKm;
   final HotspotSeverity severity;
   final int contributingStationsCount;
+  final int physicalStationsCount;
   final bool isConfirmedHotspot;
   final int? peakAqi;
   final double? meanAqi;
@@ -417,6 +418,7 @@ class HotspotClusterModel {
     required this.radiusKm,
     required this.severity,
     required this.contributingStationsCount,
+    this.physicalStationsCount = 1,
     required this.isConfirmedHotspot,
     this.peakAqi,
     this.meanAqi,
@@ -438,6 +440,7 @@ class HotspotClusterModel {
       radiusKm: (json['radius_km'] as num?)?.toDouble() ?? 2.0,
       severity: HotspotSeverity.fromString(json['severity'] as String? ?? ''),
       contributingStationsCount: json['contributing_stations_count'] as int? ?? 1,
+      physicalStationsCount: json['physical_stations_count'] as int? ?? (json['contributing_stations_count'] as int? ?? 1),
       isConfirmedHotspot: json['is_confirmed_hotspot'] as bool? ?? false,
       peakAqi: json['peak_aqi'] as int?,
       meanAqi: (json['mean_aqi'] as num?)?.toDouble(),

@@ -87,6 +87,9 @@ def calculate_spatial_uncertainty(
     1. Distance from contributing stations (40% weight)
     2. Density / station count shortfall (30% weight)
     3. Directional anisotropy / angular gap (30% weight)
+
+    Note: This is a deterministic heuristic spatial quality indicator,
+    not a calibrated Bayesian probability or confidence interval.
     """
     # 1. Distance factor: proximity of nearest and average station
     dist_ratio = min(1.0, mean_dist_km / max_radius_km)
@@ -105,8 +108,10 @@ def calculate_spatial_uncertainty(
         angle_score = 60.0 + ((max_angular_gap_deg - 180.0) / 180.0) * 40.0
 
     composite = (0.40 * dist_score) + (0.30 * count_score) + (0.30 * angle_score)
-    # Collocated stations have near-zero uncertainty
-    if min_dist_km < 0.1:
+    # Collocated stations (< 50m) have minimal spatial uncertainty
+    if min_dist_km <= 0.05:
+        composite = min(composite, 10.0)
+    elif min_dist_km < 0.1:
         composite = min(composite, 15.0)
 
     return round(min(100.0, max(0.0, composite)), 1)
@@ -255,28 +260,32 @@ class SpatialInterpolator:
             if not compatible_stations:
                 continue
 
-            # Calculate IDW weights
+            # Calculate IDW weights or Collocated Aggregation
             if is_collocated:
-                collocated_match = next((s for s in compatible_stations if s[1] <= self.collocation_threshold_km), None)
-                if collocated_match:
-                    est_val = collocated_match[2]
-                    unit = collocated_match[4]
-                    avg_h = collocated_match[3]
+                collocated_stations = [s for s in compatible_stations if s[1] <= self.collocation_threshold_km]
+                if collocated_stations:
+                    # Multiple collocated stations: aggregate by arithmetic mean across collocated monitors
+                    m = len(collocated_stations)
+                    est_val = sum(s[2] for s in collocated_stations) / float(m)
+                    avg_h = collocated_stations[0][3]
+                    unit = collocated_stations[0][4]
                     contributors = [
                         ContributingStation(
-                            station_id=collocated_match[0].station_id,
-                            station_name=collocated_match[0].station_name,
-                            provider=collocated_match[0].provider,
-                            station_type=collocated_match[0].station_type,
-                            distance_km=collocated_match[1],
-                            weight=1.0,
-                            pollutant_value=est_val,
-                            averaging_hours=avg_h,
-                            unit=unit,
-                            data_source_type=collocated_match[0].data_source_type,
+                            station_id=s[0].station_id,
+                            station_name=s[0].station_name,
+                            provider=s[0].provider,
+                            station_type=s[0].station_type,
+                            distance_km=s[1],
+                            weight=round(1.0 / float(m), 4),
+                            pollutant_value=s[2],
+                            averaging_hours=s[3],
+                            unit=s[4],
+                            data_source_type=s[0].data_source_type,
                         )
+                        for s in collocated_stations
                     ]
-                    all_contributing_ids.add(collocated_match[0].station_id)
+                    for s in collocated_stations:
+                        all_contributing_ids.add(s[0].station_id)
                 else:
                     est_val, avg_h, unit, contributors = self._calc_idw_weights(compatible_stations)
                     for c in contributors:
@@ -378,15 +387,15 @@ class SpatialInterpolator:
         sum_raw_w = sum(raw_weights)
         norm_weights = [rw / sum_raw_w for rw in raw_weights]
 
-        weighted_sum = 0.0
-        contributors: List[ContributingStation] = []
-
-        avg_hours = stations[0][3]
+        est_val = sum(s[2] * w for s, w in zip(stations, norm_weights))
+        avg_h = stations[0][3]
         unit = stations[0][4]
 
-        for i, (obs, dist, val, h, u) in enumerate(stations):
-            w = norm_weights[i]
-            weighted_sum += w * val
+        contributors: List[ContributingStation] = []
+        for s, w in zip(stations, norm_weights):
+            obs = s[0]
+            dist = s[1]
+            val = s[2]
             contributors.append(
                 ContributingStation(
                     station_id=obs.station_id,
@@ -396,13 +405,15 @@ class SpatialInterpolator:
                     distance_km=dist,
                     weight=round(w, 4),
                     pollutant_value=val,
-                    averaging_hours=h,
-                    unit=u,
+                    averaging_hours=s[3],
+                    unit=s[4],
                     data_source_type=obs.data_source_type,
                 )
             )
 
-        return weighted_sum, avg_hours, unit, contributors
+        # Sort contributors by weight descending
+        contributors.sort(key=lambda c: c.weight, reverse=True)
+        return est_val, avg_h, unit, contributors
 
 
 # Singleton instance

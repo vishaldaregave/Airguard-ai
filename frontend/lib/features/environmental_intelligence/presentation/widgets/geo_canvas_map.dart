@@ -228,6 +228,25 @@ class _GeoMapPainter extends CustomPainter {
     _drawCardinal(canvas, center, 'S', Offset(center.dx, size.height - 24));
     _drawCardinal(canvas, center, 'W', Offset(16, center.dy - 6));
     _drawCardinal(canvas, center, 'E', Offset(size.width - 24, center.dy - 6));
+
+    // Canvas Identification Watermark (Distinguishes from Real Geographic Basemap)
+    final badgePainter = TextPainter(
+      text: const TextSpan(
+        text: 'RADAR VECTOR CANVAS (LOCAL EQUIRECTANGULAR PROJECTION • NOT A BASEMAP)',
+        style: TextStyle(
+          color: AppColors.textMuted,
+          fontSize: 8.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    badgePainter.layout();
+    badgePainter.paint(
+      canvas,
+      Offset(center.dx - (badgePainter.width / 2), size.height - 14),
+    );
   }
 
   void _drawCardinal(Canvas canvas, Offset center, String text, Offset pos) {
