@@ -1,17 +1,21 @@
 """
 AirGuard AI - Air Quality Observation & Status Endpoints
+Pure HTTP GET semantics for retrieval; explicit POST endpoint for telemetry ingestion.
 """
 from typing import List, Optional
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
 
+from app.db.base import get_db
 from app.schemas.pollutant import EnvironmentalObservationInput
 from app.schemas.provider import (
     AirQualityHistoryResponse,
     CurrentAirQualityResponse,
     ProviderStatusResponse,
+    AirQualityIngestResponse,
 )
 from app.services.environmental_service import environmental_service
-from app.services.alert_worker import trigger_background_alert_evaluation
+from app.services.alert_worker import alert_worker
 
 router = APIRouter()
 
@@ -23,15 +27,18 @@ router = APIRouter()
     description=(
         "Retrieves current air quality for either a specific station_id or GPS coordinates. "
         "Returns normalized pollutant measurements, CPCB IND-AQI calculation, explainable exposure risk, "
-        "and data freshness/provenance indicators. Automatically triggers background alert evaluation."
+        "and data freshness/provenance indicators. Safe and side-effect free: does not dispatch alerts."
     ),
 )
 async def get_current_air(
     station_id: Optional[str] = Query(None, description="Station identifier (e.g. OPENAQ-1234, DEMO-DELHI-001)"),
     lat: Optional[float] = Query(None, ge=-90.0, le=90.0, description="User latitude"),
     lon: Optional[float] = Query(None, ge=-180.0, le=180.0, description="User longitude"),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> CurrentAirQualityResponse:
+    """
+    HTTP GET is safe and idempotent.
+    Retrieves air quality data without side effects or alert notification dispatches.
+    """
     if not station_id and (lat is None or lon is None):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -47,11 +54,46 @@ async def get_current_air(
             detail="Environmental observation not available for the requested location or station.",
         )
 
-    # Automatically trigger non-blocking alert evaluation for subscribers
-    if res.observation:
-        background_tasks.add_task(trigger_background_alert_evaluation, res.observation)
-
     return res
+
+
+@router.post(
+    "/ingest",
+    response_model=AirQualityIngestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Ingest Environmental Observation & Queue Durable Alert Evaluation",
+    description=(
+        "Ingests verified environmental telemetry from monitoring agencies or sensors. "
+        "Enqueues a durable background evaluation job that survives server restarts, "
+        "prevents duplicate notification dispatch, and enforces subscriber preferences."
+    ),
+)
+async def ingest_environmental_observation(
+    observation: EnvironmentalObservationInput,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> AirQualityIngestResponse:
+    """
+    Explicit telemetry ingestion endpoint.
+    Separates data write/event flows from read-only data retrieval (RFC 7231 / RFC 9110 compliance).
+    Enqueues a durable evaluation job that survives server restarts.
+    """
+    # 1. Enqueue durable job in database
+    job = alert_worker.enqueue_observation_job(db=db, obs=observation)
+
+    # 2. Trigger worker processing asynchronously (non-blocking, worker will pick up from DB)
+    background_tasks.add_task(alert_worker.process_job_by_id, job.job_id)
+
+    return AirQualityIngestResponse(
+        status="QUEUED" if job.status == "PENDING" else job.status,
+        job_id=job.job_id,
+        eval_hash=job.eval_hash,
+        station_code=job.station_code,
+        observation_timestamp=job.observation_timestamp,
+        is_correction=getattr(observation, "is_correction", False),
+        revision=getattr(observation, "revision", 0),
+        message=f"Observation ingested with job status '{job.status}' (attempts: {job.attempts})",
+    )
 
 
 @router.get(

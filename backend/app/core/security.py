@@ -3,9 +3,9 @@ AIRGUARD AI — Authentication & Security Core
 JWT-based user authentication, token verification, and strict tenant isolation.
 Guarantees:
 - Client-supplied user IDs are never trusted without cryptographic authentication.
-- Cryptographic verification of JWT tokens.
+- Cryptographic verification of JWT tokens with enforced issuer, audience, and algorithm restrictions.
 - Immediate rejection of impersonation attempts (403 Forbidden).
-- Rejection of missing, expired, or malformed tokens (401 Unauthorized).
+- Rejection of missing, expired, tampered, or invalid claims tokens (401 Unauthorized).
 """
 
 from __future__ import annotations
@@ -20,6 +20,10 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+JWT_ISSUER = "airguard-ai-auth"
+JWT_AUDIENCE = "airguard-ai-client"
+ALLOWED_ALGORITHMS = ["HS256"]
+
 
 def create_access_token(
     user_id: str,
@@ -28,6 +32,7 @@ def create_access_token(
 ) -> str:
     """
     Generate a signed HMAC-SHA256 JWT access token for a given user identifier.
+    Includes explicit subject, issuer, and audience claims.
     """
     now = datetime.now(timezone.utc)
     delta = expires_delta or timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -38,7 +43,8 @@ def create_access_token(
         "user_id": user_id,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
-        "iss": "airguard-ai-auth",
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
     }
     if custom_claims:
         payload.update(custom_claims)
@@ -48,22 +54,42 @@ def create_access_token(
 
 def verify_jwt_token(token: str) -> Dict[str, Any]:
     """
-    Cryptographically verify JWT token signature and expiration.
+    Cryptographically verify JWT token signature, expiration, issuer, and audience.
+    Strictly restricts allowed signing algorithms to HS256 to prevent algorithm confusion attacks.
     Supports Firebase ID tokens if firebase-admin is available.
     """
     try:
-        # 1. Standard HMAC-SHA256 decode
+        # Standard HMAC-SHA256 decode with strict claim validation
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            options={"require": ["exp", "iat", "sub"]},
+            algorithms=ALLOWED_ALGORITHMS,
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE,
+            options={
+                "require": ["exp", "iat", "sub", "iss", "aud"],
+                "verify_exp": True,
+                "verify_iss": True,
+                "verify_aud": True,
+            },
         )
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication token has expired. Please authenticate again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidIssuerError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token issuer. Expected '{JWT_ISSUER}'.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidAudienceError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token audience. Expected '{JWT_AUDIENCE}'.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.InvalidTokenError as e:

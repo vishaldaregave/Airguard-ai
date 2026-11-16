@@ -1,7 +1,7 @@
 """
 AirGuard AI - Database Models
 Stores verified environmental observations, historical archives, forecast records,
-and user alert preferences, device tokens, and environmental notifications.
+and user alert preferences, device tokens, environmental notifications, and durable evaluation jobs.
 Strict separation of provenance: LIVE, HISTORICAL, ESTIMATED, FORECAST, DEMO_FIXTURE.
 """
 from datetime import datetime, timezone
@@ -251,10 +251,44 @@ class EvaluatedObservationLog(Base):
     station_code = Column(String(64), index=True, nullable=False)
     observation_timestamp = Column(DateTime(timezone=True), index=True, nullable=False)
     evaluated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    revision = Column(Integer, default=0, nullable=False)
+    is_correction = Column(Boolean, default=False, nullable=False)
     matched_subscriptions_count = Column(Integer, default=0, nullable=False)
     dispatched_alerts_count = Column(Integer, default=0, nullable=False)
     data_source_type = Column(String(32), default="LIVE", nullable=False)
+    status = Column(String(32), default="COMPLETED", nullable=False)  # PROCESSING, COMPLETED
 
     __table_args__ = (
         Index("idx_eval_station_time", "station_code", "observation_timestamp"),
+        Index("idx_eval_station_time_rev", "station_code", "observation_timestamp", "revision", unique=True),
+    )
+
+
+class AlertEvaluationJob(Base):
+    """Durable queue for asynchronous background alert evaluations, surviving worker restarts."""
+    __tablename__ = "alert_evaluation_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String(64), unique=True, index=True, nullable=False)
+    eval_hash = Column(String(64), index=True, nullable=False)
+    station_code = Column(String(64), index=True, nullable=False)
+    observation_timestamp = Column(DateTime(timezone=True), index=True, nullable=False)
+    payload_json = Column(Text, nullable=False)
+    status = Column(String(32), default="PENDING", index=True, nullable=False)  # PENDING, PROCESSING, COMPLETED, FAILED
+    attempts = Column(Integer, default=0, nullable=False)
+    max_retries = Column(Integer, default=3, nullable=False)
+    last_error = Column(Text, nullable=True)
+    scheduled_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("idx_job_status_scheduled", "status", "scheduled_at"),
+        Index("idx_job_station_hash", "station_code", "eval_hash"),
     )

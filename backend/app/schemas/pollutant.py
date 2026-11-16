@@ -77,3 +77,7 @@ class EnvironmentalObservationInput(BaseModel):
     temperature_celsius: Optional[float] = Field(None, description="Ambient temperature in °C")
     relative_humidity_pct: Optional[float] = Field(None, ge=0.0, le=100.0, description="Relative humidity %")
     wind_speed_kmh: Optional[float] = Field(None, ge=0.0, description="Wind speed in km/h")
+
+    # Milestone 4.2: Corrected observations tracking
+    is_correction: bool = Field(False, description="Flag indicating if observation is a post-calibration correction")
+    revision: int = Field(0, ge=0, description="Revision number for corrected observations")

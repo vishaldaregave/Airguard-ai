@@ -135,3 +135,6 @@ class AlertMonitoringStatusResponse(BaseModel):
     last_error: Optional[str] = Field(None, description="Most recent operational error summary")
     last_error_timestamp: Optional[str] = Field(None, description="ISO timestamp of most recent error")
     fcm_mode: str = Field("MOCK_UNVERIFIED", description="Firebase Cloud Messaging transport mode")
+    pending_jobs_count: int = Field(0, description="Durable evaluation jobs pending execution")
+    failed_jobs_count: int = Field(0, description="Durable evaluation jobs permanently failed")
+    completed_jobs_count: int = Field(0, description="Durable evaluation jobs successfully executed")

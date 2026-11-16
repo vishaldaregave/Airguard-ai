@@ -2,15 +2,22 @@
 AIRGUARD AI — Alert Service
 Orchestrates user preferences, alert state tracking, deterministic engine evaluation,
 FCM dispatch, and alert history persistence.
+Ensures:
+- Deterministic alert IDs derived from (user_id, station, alert_type, timestamp, revision).
+- Safe deduplication preventing double dispatch across process restarts or retries.
+- Safe transactional commits.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException, status
 
 from app.core.config import settings
 from app.db.models import (
@@ -30,16 +37,15 @@ from app.schemas.forecast import ForecastCurrentResponse
 from app.engine.alert_engine import alert_engine, AlertCandidate
 from app.services.fcm_service import fcm_service
 from app.services.alert_monitor import alert_monitor
-from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
 
 
 class AlertService:
-    """Manages environmental alerts, user preferences, and notification lifecycles."""
+    """Core domain service for user alert configurations, state tracking, and FCM dispatch."""
 
     def get_or_create_user_preferences(self, db: Session, user_id: str) -> UserAlertPreference:
-        """Fetch user alert preferences, creating default settings if not yet existing."""
+        """Fetch existing alert preferences or initialize with safe defaults."""
         pref = db.query(UserAlertPreference).filter(UserAlertPreference.user_id == user_id).first()
         if not pref:
             pref = UserAlertPreference(
@@ -68,9 +74,9 @@ class AlertService:
         user_id: str,
         input_data: UserAlertPreferenceInput,
     ) -> UserAlertPreference:
-        """Update and persist user alert preferences."""
+        """Update existing or newly created user preferences."""
         pref = self.get_or_create_user_preferences(db, user_id)
-        
+
         pref.notifications_enabled = input_data.notifications_enabled
         pref.aqi_threshold = input_data.aqi_threshold
         pref.pm25_threshold = input_data.pm25_threshold
@@ -128,7 +134,6 @@ class AlertService:
             db.commit()
             return True
         return False
-
 
     def refresh_device_token(
         self,
@@ -229,6 +234,7 @@ class AlertService:
         """
         Evaluate an observation against user preferences, apply smart filtering,
         persist alerts, and dispatch notifications via FCM.
+        Guarantees deterministic alert IDs and safe restart deduplication.
         """
         pref_model = self.get_or_create_user_preferences(db, user_id)
         pref_schema = UserAlertPreferenceResponse(
@@ -290,6 +296,25 @@ class AlertService:
         active_tokens = self.get_active_tokens_for_user(db, user_id)
 
         for candidate in candidates:
+            # Deterministic alert_id computation for idempotent dispatch across retries & crashes
+            obs_rev = getattr(obs, "revision", 0)
+            obs_ts_str = candidate.observation_timestamp.isoformat() if candidate.observation_timestamp.tzinfo else candidate.observation_timestamp.replace(tzinfo=timezone.utc).isoformat()
+            det_raw = f"{user_id}:{candidate.station_code}:{candidate.alert_type.value}:{obs_ts_str}:rev{obs_rev}".encode("utf-8")
+            det_id = hashlib.sha256(det_raw).hexdigest()[:32]
+            candidate.alert_id = f"alert-{det_id}"
+
+            # Check if this alert was already persisted or dispatched (restart safety)
+            existing_record = db.query(AlertRecord).filter(
+                AlertRecord.alert_id == candidate.alert_id
+            ).first()
+            if existing_record:
+                logger.debug(
+                    "Alert %s already recorded for user %s. Suppressing duplicate dispatch.",
+                    candidate.alert_id,
+                    user_id,
+                )
+                continue
+
             tracker = tracker_map.get(candidate.alert_type.value)
             tracker_info = None
             if tracker:
@@ -381,8 +406,14 @@ class AlertService:
                 tracker.is_active = not candidate.is_recovery
                 tracker.updated_at = datetime.now(timezone.utc)
 
-            db.commit()
-            db.refresh(record)
+            try:
+                db.commit()
+                db.refresh(record)
+            except IntegrityError:
+                # Concurrent transaction already committed this alert_id
+                db.rollback()
+                logger.info("Alert %s already committed concurrently. Skipping.", candidate.alert_id)
+                continue
 
             dispatched_alerts.append(
                 AlertItem(
@@ -401,160 +432,6 @@ class AlertService:
                     trigger_reason=record.trigger_reason,
                     recommended_precaution=record.recommended_precaution,
                     is_forecast=record.is_forecast,
-                    forecast_horizon_hours=record.forecast_horizon_hours,
-                    is_read=record.is_read,
-                    is_resolved=record.is_resolved,
-                    delivery_status=record.delivery_status,
-                    created_at=record.created_at,
-                )
-            )
-
-        return dispatched_alerts
-
-    def evaluate_and_dispatch_forecast(
-        self,
-        db: Session,
-        user_id: str,
-        forecast: ForecastCurrentResponse,
-    ) -> List[AlertItem]:
-        """
-        Evaluate forecast predictions against user preferences, apply smart filtering,
-        persist alerts, and dispatch notifications via FCM.
-        """
-        pref_model = self.get_or_create_user_preferences(db, user_id)
-        pref_schema = UserAlertPreferenceResponse(
-            user_id=pref_model.user_id,
-            notifications_enabled=pref_model.notifications_enabled,
-            aqi_threshold=pref_model.aqi_threshold,
-            pm25_threshold=pref_model.pm25_threshold,
-            pm10_threshold=pref_model.pm10_threshold,
-            sudden_deterioration_enabled=pref_model.sudden_deterioration_enabled,
-            forecast_alerts_enabled=pref_model.forecast_alerts_enabled,
-            recovery_alerts_enabled=pref_model.recovery_alerts_enabled,
-            quiet_hours_enabled=pref_model.quiet_hours_enabled,
-            quiet_hours_start=pref_model.quiet_hours_start,
-            quiet_hours_end=pref_model.quiet_hours_end,
-            preferred_station_code=pref_model.preferred_station_code,
-            preferred_station_name=pref_model.preferred_station_name,
-            updated_at=pref_model.updated_at,
-        )
-
-        if not pref_schema.notifications_enabled or not pref_schema.forecast_alerts_enabled:
-            return []
-
-        if pref_schema.preferred_station_code and pref_schema.preferred_station_code != forecast.station_id:
-            return []
-
-        tracker = db.query(AlertStateTracker).filter(
-            AlertStateTracker.user_id == user_id,
-            AlertStateTracker.station_code == forecast.station_id,
-            AlertStateTracker.alert_type == "FORECAST_WARNING",
-        ).first()
-
-        tracker_info = None
-        if tracker:
-            tracker_info = {
-                "is_in_alert": tracker.is_active,
-                "last_alert_time": tracker.last_triggered_at,
-                "last_observed_value": tracker.last_observed_value,
-                "last_severity": tracker.last_severity,
-            }
-
-        candidates = alert_engine.evaluate_forecast(
-            forecast=forecast,
-            pref=pref_schema,
-            active_tracker=tracker_info,
-        )
-
-        dispatched_alerts: List[AlertItem] = []
-        active_tokens = self.get_active_tokens_for_user(db, user_id)
-
-        for candidate in candidates:
-            should_send, reason = alert_engine.should_dispatch_alert(
-                candidate=candidate,
-                pref=pref_schema,
-                active_tracker=tracker_info,
-            )
-            if not should_send:
-                continue
-
-            fcm_result = fcm_service.send_multicast(
-                tokens=active_tokens,
-                title=f"AIRGUARD Warning: High Pollution Expected ({forecast.station_name})",
-                body=f"{candidate.trigger_reason} Rec: {candidate.recommended_precaution}",
-                data={
-                    "alert_id": candidate.alert_id,
-                    "alert_type": candidate.alert_type.value,
-                    "severity": candidate.severity.value,
-                    "station_code": candidate.station_code,
-                    "observed_value": str(candidate.observed_value),
-                    "is_forecast": "true",
-                },
-            )
-
-            record = AlertRecord(
-                alert_id=candidate.alert_id,
-                user_id=user_id,
-                alert_type=candidate.alert_type.value,
-                severity=candidate.severity.value,
-                station_code=candidate.station_code,
-                station_name=candidate.station_name,
-                pollutant=candidate.pollutant,
-                observed_value=candidate.observed_value,
-                threshold_value=candidate.threshold_value,
-                unit=candidate.unit,
-                source_provenance=candidate.source_provenance,
-                observation_timestamp=candidate.observation_timestamp,
-                trigger_reason=candidate.trigger_reason,
-                recommended_precaution=candidate.recommended_precaution,
-                is_forecast=True,
-                forecast_horizon_hours=candidate.forecast_horizon_hours,
-                is_read=False,
-                is_resolved=False,
-                delivery_status=fcm_result.delivery_status,
-            )
-            db.add(record)
-
-            if not tracker:
-                tracker = AlertStateTracker(
-                    user_id=user_id,
-                    station_code=candidate.station_code,
-                    alert_type="FORECAST_WARNING",
-                    last_alert_id=candidate.alert_id,
-                    last_triggered_at=datetime.now(timezone.utc),
-                    last_observed_value=candidate.observed_value,
-                    last_severity=candidate.severity.value,
-                    is_active=True,
-                )
-                db.add(tracker)
-            else:
-                tracker.last_alert_id = candidate.alert_id
-                tracker.last_triggered_at = datetime.now(timezone.utc)
-                tracker.last_observed_value = candidate.observed_value
-                tracker.last_severity = candidate.severity.value
-                tracker.is_active = True
-                tracker.updated_at = datetime.now(timezone.utc)
-
-            db.commit()
-            db.refresh(record)
-
-            dispatched_alerts.append(
-                AlertItem(
-                    alert_id=record.alert_id,
-                    user_id=record.user_id,
-                    alert_type=candidate.alert_type,
-                    severity=candidate.severity,
-                    station_code=record.station_code,
-                    station_name=record.station_name,
-                    pollutant=record.pollutant,
-                    observed_value=record.observed_value,
-                    threshold_value=record.threshold_value,
-                    unit=record.unit,
-                    source_provenance=record.source_provenance,
-                    observation_timestamp=record.observation_timestamp,
-                    trigger_reason=record.trigger_reason,
-                    recommended_precaution=record.recommended_precaution,
-                    is_forecast=True,
                     forecast_horizon_hours=record.forecast_horizon_hours,
                     is_read=record.is_read,
                     is_resolved=record.is_resolved,

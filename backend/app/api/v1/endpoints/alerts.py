@@ -1,15 +1,16 @@
 """
 AIRGUARD AI — Environmental Alerts and Notifications API Endpoints
 Endpoints for alert history, user notification preferences, device token lifecycle,
-background evaluation worker, and operational monitoring.
+durable background evaluation worker, and operational monitoring.
 Strict Authentication: Derives user identity strictly from validated JWT/Firebase tokens.
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
+from app.db.models import AlertEvaluationJob
 from app.core.config import settings
 from app.core.security import get_current_authenticated_user, create_access_token
 from app.schemas.alert import (
@@ -26,6 +27,7 @@ from app.schemas.alert import (
     TokenAuthResponse,
     AlertMonitoringStatusResponse,
 )
+from app.schemas.provider import AirQualityIngestResponse
 from app.schemas.pollutant import EnvironmentalObservationInput
 from app.engine.cpcb_aqi import calculate_cpcb_aqi
 from app.services.alert_service import alert_service
@@ -40,10 +42,19 @@ router = APIRouter()
     "/auth/token",
     response_model=TokenAuthResponse,
     summary="Issue signed JWT access token for client authentication",
-    description="Generates an HMAC-SHA256 Bearer access token for the specified user ID.",
+    description="Generates an HMAC-SHA256 Bearer access token for the specified user ID in non-production environments.",
 )
 async def generate_user_token(payload: TokenAuthRequest) -> TokenAuthResponse:
-    """Generate signed JWT token for user authentication and authorization."""
+    """
+    Generate signed JWT token for user authentication and authorization.
+    Strictly forbidden in production environments (real identity verification required).
+    """
+    if settings.ENVIRONMENT.lower() == "production":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Development token issuer is disabled in production. Authenticate via production OAuth or Firebase provider.",
+        )
+
     token = create_access_token(user_id=payload.user_id.strip())
     ttl_seconds = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     return TokenAuthResponse(
@@ -307,17 +318,94 @@ async def worker_evaluate_all_subscribers(
     )
 
 
+@router.post(
+    "/worker/enqueue",
+    response_model=AirQualityIngestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Enqueue environmental observation for durable evaluation",
+    description="Persists a durable evaluation job in the queue to survive restarts and prevent double-dispatch.",
+)
+async def enqueue_observation_worker(
+    observation: EnvironmentalObservationInput,
+    user_id: str = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_db),
+) -> AirQualityIngestResponse:
+    job = alert_worker.enqueue_observation_job(db=db, obs=observation)
+    return AirQualityIngestResponse(
+        status=job.status,
+        job_id=job.job_id,
+        eval_hash=job.eval_hash,
+        station_code=job.station_code,
+        observation_timestamp=job.observation_timestamp,
+        is_correction=getattr(observation, "is_correction", False),
+        revision=getattr(observation, "revision", 0),
+        message=f"Observation enqueued for durable background evaluation with status '{job.status}'.",
+    )
+
+
+@router.post(
+    "/jobs/process-pending",
+    summary="Trigger processing of pending durable alert jobs",
+    description="Processes pending jobs and recovers any stalled or crashed jobs.",
+)
+async def process_pending_jobs(
+    limit: int = Query(10, ge=1, le=100),
+    user_id: str = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    processed_count = alert_worker.process_pending_jobs(db=db, limit=limit)
+    return {"processed_jobs_count": processed_count, "status": "COMPLETED"}
+
+
+@router.get(
+    "/jobs/{job_id}",
+    summary="Get durable alert evaluation job status",
+    description="Inspect observable status, retry attempts, and outcome of a specific durable evaluation job.",
+)
+async def get_job_status(
+    job_id: str,
+    user_id: str = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    job = db.query(AlertEvaluationJob).filter(AlertEvaluationJob.job_id == job_id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Durable job with ID '{job_id}' not found.",
+        )
+    return {
+        "job_id": job.job_id,
+        "eval_hash": job.eval_hash,
+        "station_code": job.station_code,
+        "status": job.status,
+        "attempts": job.attempts,
+        "max_retries": job.max_retries,
+        "last_error": job.last_error,
+        "scheduled_at": job.scheduled_at.isoformat() if job.scheduled_at else None,
+        "processed_at": job.processed_at.isoformat() if job.processed_at else None,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+    }
+
+
 @router.get(
     "/monitoring/status",
     response_model=AlertMonitoringStatusResponse,
     summary="Operational status and health telemetry",
-    description="Reports alert engine operational statistics, evaluation counts, deliveries, invalid tokens, and worker health.",
+    description="Reports alert engine operational statistics, evaluation counts, deliveries, invalid tokens, durable job queue, and worker health.",
 )
 async def get_monitoring_status(
     user_id: str = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_db),
 ) -> AlertMonitoringStatusResponse:
     status_dict = alert_monitor.get_status()
     fcm_mode = "LIVE" if fcm_service.is_live else "MOCK_UNVERIFIED"
+
+    # Query durable job statistics
+    pending_jobs = db.query(AlertEvaluationJob).filter(AlertEvaluationJob.status == "PENDING").count()
+    failed_jobs = db.query(AlertEvaluationJob).filter(AlertEvaluationJob.status == "FAILED").count()
+    completed_jobs = db.query(AlertEvaluationJob).filter(AlertEvaluationJob.status == "COMPLETED").count()
+
     return AlertMonitoringStatusResponse(
         worker_health=status_dict["worker_health"],
         evaluations_total_count=status_dict["evaluations_total_count"],
@@ -333,4 +421,7 @@ async def get_monitoring_status(
         last_error=status_dict["last_error"],
         last_error_timestamp=status_dict["last_error_timestamp"],
         fcm_mode=fcm_mode,
+        pending_jobs_count=pending_jobs,
+        failed_jobs_count=failed_jobs,
+        completed_jobs_count=completed_jobs,
     )

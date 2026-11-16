@@ -4,9 +4,9 @@ import '../constants/api_constants.dart';
 class ApiClient {
   final Dio dio;
 
-  // Default cryptographic HMAC-SHA256 JWT for 'default_user'
+  // Default cryptographic HMAC-SHA256 JWT for 'default_user' with validated issuer and audience
   static const String defaultJwtToken =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZWZhdWx0X3VzZXIiLCJ1c2VyX2lkIjoiZGVmYXVsdF91c2VyIiwiaWF0IjoxNzk0ODM5MzU0LCJleHAiOjIxMTAxOTkzNTQsImlzcyI6ImFpcmd1YXJkLWFpLWF1dGgifQ.GTRXFtenKbVXYKGl_jJYqqqPO4ferqBESZ-G6Zc91uc';
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZWZhdWx0X3VzZXIiLCJ1c2VyX2lkIjoiZGVmYXVsdF91c2VyIiwiaWF0IjoxNzk0ODM5MzU0LCJleHAiOjIxMTAxOTkzNTQsImlzcyI6ImFpcmd1YXJkLWFpLWF1dGgiLCJhdWQiOiJhaXJndWFyZC1haS1jbGllbnQifQ.QoxttHjCeTYVK8D6isci2uYiu0g6L41exHx3c8-Wihk';
 
   ApiClient({String? baseUrl})
       : dio = Dio(

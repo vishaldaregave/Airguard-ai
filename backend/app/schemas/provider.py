@@ -97,3 +97,14 @@ class AirQualityHistoryResponse(BaseModel):
     observations: List[EnvironmentalObservationInput] = Field(
         default_factory=list, description="Historical observations in chronological order"
     )
+
+
+class AirQualityIngestResponse(BaseModel):
+    status: str = Field(..., description="Ingestion processing status: QUEUED, PROCESSED, SKIPPED, COMPLETED")
+    job_id: Optional[str] = Field(None, description="Durable background evaluation job ID")
+    eval_hash: str = Field(..., description="Observation idempotency fingerprint hash")
+    station_code: str = Field(..., description="Station or grid coordinate identifier")
+    observation_timestamp: datetime = Field(..., description="Timestamp of ingested observation")
+    is_correction: bool = Field(False, description="Whether this observation is an updated/calibrated correction")
+    revision: int = Field(0, description="Revision number of observation")
+    message: str = Field("Observation ingested successfully and scheduled for durable alert evaluation.", description="Operational status message")
