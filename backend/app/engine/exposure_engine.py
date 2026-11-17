@@ -21,7 +21,7 @@ ACTIVITY_PROFILES: Dict[ActivityType, ActivityProfile] = {
         inhalation_rate_m3_h=0.50,
         met_equivalent=1.0,
         description="Quiet rest, sleep, or sedentary desk work with basal ventilation (~8.3 L/min).",
-        reference="US EPA Exposure Factors Handbook (2011 Edition), Table 6-1 (Sedentary adult mean).",
+        reference="US EPA Exposure Factors Handbook (2011 Edition, Table 6-2: Sedentary/Passive; 1997 Edition, Table 5-23: Sedentary Adult Mean 0.5 m\u00b3/h).",
     ),
     ActivityType.COMMUTING: ActivityProfile(
         activity_type=ActivityType.COMMUTING,
@@ -29,7 +29,7 @@ ACTIVITY_PROFILES: Dict[ActivityType, ActivityProfile] = {
         inhalation_rate_m3_h=0.60,
         met_equivalent=1.5,
         description="Passive vehicle transit (bus, car, metro) with light seated alertness (~10.0 L/min).",
-        reference="Zuurbier et al. (2009); US EPA Exposure Factors Handbook (2011), Table 6-2.",
+        reference="Zuurbier et al. (2009); US EPA Exposure Factors Handbook (2011 Edition), Table 6-2 (Light In-Vehicle Transit, <=1.5 MET).",
     ),
     ActivityType.WALKING: ActivityProfile(
         activity_type=ActivityType.WALKING,
@@ -37,7 +37,7 @@ ACTIVITY_PROFILES: Dict[ActivityType, ActivityProfile] = {
         inhalation_rate_m3_h=1.20,
         met_equivalent=3.0,
         description="Standard pedestrian walking at ~4-5 km/h with moderate respiratory demand (~20.0 L/min).",
-        reference="Adams (1993); US EPA Exposure Factors Handbook (2011), Table 6-1 (Light activity adult).",
+        reference="Adams (1993); US EPA Exposure Factors Handbook (2011 Edition), Table 6-2 (Light/Moderate Intensity, 3.0 MET).",
     ),
     ActivityType.CYCLING: ActivityProfile(
         activity_type=ActivityType.CYCLING,
@@ -45,7 +45,7 @@ ACTIVITY_PROFILES: Dict[ActivityType, ActivityProfile] = {
         inhalation_rate_m3_h=2.10,
         met_equivalent=6.0,
         description="Moderate outdoor cycling (~15-18 km/h) with elevated tidal volume (~35.0 L/min).",
-        reference="Int Panis et al. (2010); US EPA Exposure Factors Handbook (2011), Table 6-1 (Moderate activity).",
+        reference="Int Panis et al. (2010); US EPA Exposure Factors Handbook (2011 Edition), Table 6-2 (Moderate Intensity 95th Percentile, 6.0 MET).",
     ),
     ActivityType.RUNNING: ActivityProfile(
         activity_type=ActivityType.RUNNING,
@@ -53,7 +53,7 @@ ACTIVITY_PROFILES: Dict[ActivityType, ActivityProfile] = {
         inhalation_rate_m3_h=2.80,
         met_equivalent=8.0,
         description="Vigorous aerobic running (~8-10 km/h) with high minute ventilation (~46.7 L/min).",
-        reference="Adams (1993); US EPA Exposure Factors Handbook (2011), Table 6-1 (Heavy activity adult).",
+        reference="Adams (1993); US EPA Exposure Factors Handbook (2011 Edition), Table 6-2 (High Intensity Adult Mean, 8.0 MET).",
     ),
 }
 
@@ -76,7 +76,8 @@ CALCULATION_METHODOLOGY_NOTE = (
     "2. Estimated Inhaled Mass = Ambient Concentration (C) × Ventilation Rate (V_E) × Duration (t in hours).\n"
     "   Units: µg (mg for Carbon Monoxide).\n"
     "3. Total Air Inhaled = Ventilation Rate (V_E) × Duration (t in hours) [m³].\n"
-    "Assumptions: Adult mean minute ventilation rates derived from US EPA Exposure Factors Handbook (2011, Chapter 6).\n"
+    "Assumptions: Adult mean minute ventilation rates derived from US EPA Exposure Factors Handbook (2011, Chapter 6, Table 6-2).\n"
+    "4. Averaging-Period Compatibility: Ambient monitoring inputs follow statutory regulatory periods (24-hour running averages for PM2.5, PM10, NO2, SO2, NH3, Pb; 8-hour running averages for CO and O3). Simulating sub-daily activity sessions assumes temporal concentration uniformity across the session window. Real-world short-term transient spikes or diurnal peaks may deviate from the 24-hr/8-hr average.\n"
     "Distinct Pollutant Integrity: Criteria pollutants are never summed into an arbitrary single composite score."
 )
 

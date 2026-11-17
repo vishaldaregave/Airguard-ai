@@ -65,6 +65,15 @@ class SimulateExposureRequest(BaseModel):
             raise ValueError("Duration must be between 15 minutes and 480 minutes (8 hours).")
         return v
 
+    @field_validator("custom_concentrations")
+    @classmethod
+    def validate_custom_concentrations(cls, v: Optional[Dict[str, float]]) -> Optional[Dict[str, float]]:
+        if v is not None:
+            for pol, val in v.items():
+                if val is not None and val < 0.0:
+                    raise ValueError(f"Custom concentration for {pol} cannot be negative: {val}")
+        return v
+
 
 class ExposureSimulationResponse(BaseModel):
     status: str = Field("COMPUTED", description="Simulation status: COMPUTED, INSUFFICIENT_DATA, STALE_DATA")

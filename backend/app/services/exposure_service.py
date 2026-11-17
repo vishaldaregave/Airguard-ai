@@ -38,6 +38,7 @@ from app.schemas.exposure import (
 from app.services.environmental_service import environmental_service
 from app.services.geo_intelligence_service import geo_intelligence_service
 from app.services.history_service import history_service
+from app.services.quality import PROVIDER_STALENESS_THRESHOLDS_MINUTES, check_observation_staleness
 
 
 class ExposureService:
@@ -156,6 +157,10 @@ class ExposureService:
             start_h = request.forecast_start_offset_hours
             end_h = start_h + duration_hours
 
+            # Discrete horizon steps in exposure window
+            matched_steps = [s.horizon_hours for s in forecast_res.forecast_steps if start_h <= s.horizon_hours <= max(end_h, 1)]
+            fallback_pols: List[str] = []
+
             # Approximate time-weighted forecast concentration across target horizon steps
             forecast_concentrations: Dict[str, Optional[float]] = {}
             for pol in ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3"]:
@@ -163,7 +168,6 @@ class ExposureService:
                 relevant_vals: List[float] = []
                 for step in forecast_res.forecast_steps:
                     h = step.horizon_hours
-                    # If step is within or close to target window
                     if start_h <= h <= max(end_h, 1):
                         p_pred = step.pollutants.get(pol)
                         if p_pred and p_pred.predicted_value is not None:
@@ -175,6 +179,7 @@ class ExposureService:
                     # Fallback to current obs value if horizon not matched
                     cur_val = getattr(current_obs, pol.lower().replace(".", "_"), None)
                     forecast_concentrations[pol] = cur_val
+                    fallback_pols.append(pol)
 
             # Compute CPCB forecast AQI on estimated concentrations
             synth_forecast_obs = EnvironmentalObservationInput(
@@ -195,6 +200,22 @@ class ExposureService:
             pollutant_metrics = compute_all_pollutant_metrics(forecast_concentrations, activity, request.duration_minutes)
 
             loc_name = f"Forecast Window (+{start_h}h to +{end_h:.1f}h): {current_obs.station_name or 'Query Location'}"
+            
+            temporal_forecast_note = (
+                f"\nTemporal Forecast Integration: Window (+{start_h}h to +{end_h:.1f}h) integrated across "
+                f"{len(matched_steps)} discrete horizon step(s) ({matched_steps}h)."
+            )
+            if fallback_pols:
+                temporal_forecast_note += (
+                    f" Missing Forecast Step Fallback: Prediction steps for {', '.join(fallback_pols)} were unavailable; "
+                    f"current ambient observation persisted as baseline proxy."
+                )
+
+            sub_daily_averaging_note = (
+                f"\nAveraging-Period Disclosure: {request.duration_minutes}-minute exposure evaluated against "
+                f"regulatory 24-hr/8-hr standards assuming temporal concentration uniformity across session window."
+            )
+
             return ExposureSimulationResponse(
                 status="COMPUTED",
                 activity=activity,
@@ -216,7 +237,7 @@ class ExposureService:
                 is_forecast=True,
                 is_interpolated=False,
                 spatial_uncertainty_score=None,
-                calculation_methodology=CALCULATION_METHODOLOGY_NOTE + "\nForecast: Autoregressive ridge regression multi-horizon projection.",
+                calculation_methodology=CALCULATION_METHODOLOGY_NOTE + temporal_forecast_note + sub_daily_averaging_note,
                 disclaimer=EXPOSURE_NON_MEDICAL_DISCLAIMER + " Projected from forecast environmental model; actual future exposure may vary.",
                 timestamp=now_utc,
             )
@@ -289,10 +310,56 @@ class ExposureService:
         obs = curr_res.observation
         station_name = obs.station_name or obs.station_id or "Monitoring Location"
 
-        # Check staleness
-        status_code = "COMPUTED"
+        # Provider-specific freshness threshold evaluation
+        age_min = curr_res.data_freshness_minutes if curr_res.data_freshness_minutes is not None else 180.0
+        provider_thresh = 120.0
+        clean_p = obs.provider.lower().replace("-", "_").replace(" ", "_")
+        for p_k, p_t in PROVIDER_STALENESS_THRESHOLDS_MINUTES.items():
+            clean_k = p_k.lower().replace("-", "_").replace(" ", "_")
+            if clean_k in clean_p or clean_p in clean_k:
+                provider_thresh = p_t
+                break
+
+        # Check staleness: if stale, withhold exposure calculation to prevent inaccurate cumulative estimates
         if curr_res.is_stale:
             status_code = "STALE_DATA"
+            stale_disclaimer = (
+                f"{EXPOSURE_NON_MEDICAL_DISCLAIMER} Stale Data Rejection: Telemetry from {obs.provider} is "
+                f"{age_min:.0f} minutes old, which exceeds the provider-specific freshness "
+                f"threshold of {provider_thresh:.0f} minutes. Exposure calculation is withheld to avoid inaccurate estimates."
+            )
+            stale_methodology = (
+                f"{CALCULATION_METHODOLOGY_NOTE}\n"
+                f"Calculation Status: Withheld due to stale telemetry ({age_min:.0f} min > {provider_thresh:.0f} min threshold for {obs.provider})."
+            )
+            return ExposureSimulationResponse(
+                status=status_code,
+                activity=activity,
+                duration_minutes=request.duration_minutes,
+                duration_hours=round(duration_hours, 2),
+                total_inhaled_volume_m3=total_inhaled_vol,
+                data_source_type=obs.data_source_type,
+                location_name=station_name,
+                latitude=obs.location.latitude,
+                longitude=obs.location.longitude,
+                pollutants={},
+                cpcb_aqi=None,
+                cpcb_category=None,
+                prominent_pollutant=None,
+                is_forecast=False,
+                is_interpolated=False,
+                spatial_uncertainty_score=None,
+                calculation_methodology=stale_methodology,
+                disclaimer=stale_disclaimer,
+                timestamp=now_utc,
+            )
+
+        # Handle DEMO_FIXTURE provenance
+        demo_disclaimer = ""
+        if obs.data_source_type == DataSourceType.DEMO_FIXTURE:
+            if not station_name.startswith("[DEMO"):
+                station_name = f"[DEMO FIXTURE] {station_name}"
+            demo_disclaimer = "\nDEMO DATA NOTICE: This exposure estimate uses DEMO_FIXTURE synthetic data and does not represent real-world physical air quality."
 
         concentrations = {
             "PM2.5": obs.pm2_5,
@@ -308,8 +375,14 @@ class ExposureService:
         pollutant_metrics = compute_all_pollutant_metrics(concentrations, activity, request.duration_minutes)
         aqi_res = curr_res.aqi_result
 
+        sub_daily_averaging_note = (
+            f"\nAveraging-Period Disclosure: {request.duration_minutes}-minute exposure evaluated against "
+            f"regulatory 24-hr (PM2.5, PM10, NO2, SO2) and 8-hr (CO, O3) monitoring averages "
+            f"assuming uniform temporal concentration across the activity window."
+        )
+
         return ExposureSimulationResponse(
-            status=status_code,
+            status="COMPUTED",
             activity=activity,
             duration_minutes=request.duration_minutes,
             duration_hours=round(duration_hours, 2),
@@ -329,8 +402,8 @@ class ExposureService:
             is_forecast=False,
             is_interpolated=False,
             spatial_uncertainty_score=None,
-            calculation_methodology=CALCULATION_METHODOLOGY_NOTE,
-            disclaimer=EXPOSURE_NON_MEDICAL_DISCLAIMER + (" (Warning: environmental observation is older than 120 minutes.)" if curr_res.is_stale else ""),
+            calculation_methodology=CALCULATION_METHODOLOGY_NOTE + sub_daily_averaging_note,
+            disclaimer=EXPOSURE_NON_MEDICAL_DISCLAIMER + demo_disclaimer,
             timestamp=now_utc,
         )
 
