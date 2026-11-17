@@ -37,6 +37,20 @@ class SubIndexResult {
       indexHigh: json['index_high'] as int,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'pollutant': pollutant,
+      'concentration': concentration,
+      'unit': unit,
+      'sub_index': subIndex,
+      'category': category,
+      'breakpoint_low': breakpointLow,
+      'breakpoint_high': breakpointHigh,
+      'index_low': indexLow,
+      'index_high': indexHigh,
+    };
+  }
 }
 
 class HealthAdvisory {
@@ -66,6 +80,17 @@ class HealthAdvisory {
       recommendedMask: json['recommended_mask'] as String?,
       airPurifierAdvice: json['air_purifier_advice'] as String?,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'category': category,
+      'general_statement': generalStatement,
+      'sensitive_group_advice': sensitiveGroupAdvice,
+      'outdoor_activity_advice': outdoorActivityAdvice,
+      'recommended_mask': recommendedMask,
+      'air_purifier_advice': airPurifierAdvice,
+    };
   }
 }
 
@@ -138,5 +163,27 @@ class AQICalculationResult {
       calculationTimestamp: DateTime.parse(json['calculation_timestamp'] as String),
       location: LocationCoordinate.fromJson(json['location'] as Map<dynamic, dynamic>),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'standard': standard,
+      'status': status,
+      'status_message': statusMessage,
+      'overall_aqi': overallAqi,
+      'category': category,
+      'color_code': colorCode,
+      'prominent_pollutant': prominentPollutant,
+      'sub_indices': subIndices.map((k, v) => MapEntry(k, v.toJson())),
+      'monitored_pollutant_count': monitoredPollutantCount,
+      'has_particulate_matter': hasParticulateMatter,
+      'health_advisory': healthAdvisory?.toJson(),
+      'is_stale': isStale,
+      'data_source_type': dataSourceType,
+      'provider': provider,
+      'observation_timestamp': observationTimestamp.toIso8601String(),
+      'calculation_timestamp': calculationTimestamp.toIso8601String(),
+      'location': location.toJson(),
+    };
   }
 }

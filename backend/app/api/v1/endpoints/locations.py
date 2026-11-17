@@ -2,6 +2,7 @@
 AirGuard AI - Location Intelligence Endpoints
 """
 from typing import Optional
+import httpx
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.schemas.provider import LocationNearbyResponse
@@ -31,3 +32,56 @@ async def get_nearby_locations(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Location discovery failed: {str(e)}",
         )
+
+
+@router.get(
+    "/detect-ip",
+    summary="Detect Client Location via Network IP",
+    description="Resolves client approximate geographic coordinates and city name using IP intelligence without requiring hardware GPS.",
+)
+async def detect_ip_location():
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            resp = await client.get("http://ip-api.com/json")
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "success":
+                    return {
+                        "status": "success",
+                        "latitude": float(data.get("lat", 18.5204)),
+                        "longitude": float(data.get("lon", 73.8567)),
+                        "city": data.get("city", "Pune"),
+                        "state": data.get("regionName", "Maharashtra"),
+                        "country": data.get("country", "India"),
+                        "countryCode": data.get("countryCode", "IN"),
+                    }
+    except Exception:
+        pass
+
+    # Secondary fallback
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            resp = await client.get("https://ipapi.co/json/")
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "status": "success",
+                    "latitude": float(data.get("latitude", 18.5204)),
+                    "longitude": float(data.get("longitude", 73.8567)),
+                    "city": data.get("city", "Pune"),
+                    "state": data.get("region", "Maharashtra"),
+                    "country": data.get("country_name", "India"),
+                    "countryCode": data.get("country_code", "IN"),
+                }
+    except Exception:
+        pass
+
+    return {
+        "status": "fallback",
+        "latitude": 18.5204,
+        "longitude": 73.8567,
+        "city": "Pune",
+        "state": "Maharashtra",
+        "country": "India",
+        "countryCode": "IN",
+    }

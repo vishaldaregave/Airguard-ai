@@ -100,7 +100,7 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
   Future<void> initialize() async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
-      // 1. Acquire GPS or fallback location
+      // 1. Acquire GPS or high-accuracy IP location
       final locationResult = await _locationService.determinePosition();
       
       // 2. Discover nearby stations across providers
@@ -167,6 +167,47 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
     }
   }
 
+  /// Changes the user's location to any selected city or coordinates
+  Future<void> changeLocation(
+    double lat,
+    double lon, {
+    String? cityName,
+    String? stateName,
+    String? countryName,
+  }) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final loc = UserLocationResult(
+        latitude: lat,
+        longitude: lon,
+        isGpsLive: true,
+        statusMessage: 'Location set to ${cityName ?? "custom coordinates"}',
+        cityName: cityName,
+        stateName: stateName,
+        countryName: countryName,
+      );
+
+      final stations = await _repository.getNearbyStations(lat, lon, radiusKm: 30.0);
+      final assessment = await _repository.getCurrentAirQuality(lat: lat, lon: lon);
+      final activeStation = assessment.station ?? (stations.isNotEmpty ? stations.first : null);
+
+      state = state.copyWith(
+        isLoading: false,
+        userLocation: loc,
+        nearbyStations: stations,
+        selectedStation: activeStation,
+        currentAssessment: assessment,
+      );
+
+      await _fetchForecastAndExplanation(assessment, activeStation?.stationId);
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Failed to update location: $e',
+      );
+    }
+  }
+
   Future<void> locateMe() async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
@@ -218,29 +259,23 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
     // Forecast fetch
     state = state.copyWith(isForecastLoading: true, forecastError: null);
     try {
-      final forecast = await _repository.getForecast(
+      final forecastRes = await _repository.getForecast(
         stationId: stationId,
-        lat: assessment.observation?.location.latitude,
-        lon: assessment.observation?.location.longitude,
+        lat: state.userLocation?.latitude,
+        lon: state.userLocation?.longitude,
       );
-      state = state.copyWith(isForecastLoading: false, forecast: forecast);
+      state = state.copyWith(forecast: forecastRes, isForecastLoading: false);
     } catch (e) {
-      state = state.copyWith(
-        isForecastLoading: false,
-        forecastError: 'Forecast unavailable: $e',
-      );
+      state = state.copyWith(isForecastLoading: false, forecastError: e.toString());
     }
 
     // AI Explanation fetch
     state = state.copyWith(isAILoading: true, aiError: null);
     try {
-      final explanation = await _repository.getAIExplanation(assessment: assessment);
-      state = state.copyWith(isAILoading: false, aiExplanation: explanation);
+      final explRes = await _repository.getAIExplanation(assessment: assessment);
+      state = state.copyWith(aiExplanation: explRes, isAILoading: false);
     } catch (e) {
-      state = state.copyWith(
-        isAILoading: false,
-        aiError: 'Explanation unavailable: $e',
-      );
+      state = state.copyWith(isAILoading: false, aiError: e.toString());
     }
   }
 }
@@ -248,6 +283,6 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
 final environmentalControllerProvider =
     StateNotifierProvider<EnvironmentalController, EnvironmentalState>((ref) {
   final repo = ref.watch(environmentalRepositoryProvider);
-  final locService = ref.watch(locationServiceProvider);
-  return EnvironmentalController(repo, locService);
+  final loc = ref.watch(locationServiceProvider);
+  return EnvironmentalController(repo, loc);
 });

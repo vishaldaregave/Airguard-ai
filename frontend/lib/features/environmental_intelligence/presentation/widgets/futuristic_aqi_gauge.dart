@@ -19,99 +19,153 @@ class FuturisticAqiGauge extends StatelessWidget {
     final prominentPollutant = aqiResult.prominentPollutant ?? 'None';
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
       decoration: BoxDecoration(
         color: AppColors.surfaceCard,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(26),
         border: Border.all(color: AppColors.border, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: categoryColor.withValues(alpha: 0.08),
-            blurRadius: 30,
-            spreadRadius: 2,
-          ),
-        ],
+        boxShadow: AppColors.cardShadow,
       ),
       child: Column(
         children: [
+          // Radial Speedometer Arc
           SizedBox(
-            height: 220,
-            width: 220,
+            height: 195,
+            width: double.infinity,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                CustomPaint(
-                  size: const Size(220, 220),
-                  painter: _AqiGaugePainter(
-                    aqi: aqi,
-                    categoryColor: categoryColor,
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _SpeedometerArcPainter(
+                      aqi: aqi,
+                      categoryColor: categoryColor,
+                    ),
                   ),
                 ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'CPCB AQI',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      aqiResult.overallAqi != null ? '$aqi' : '--',
-                      style: TextStyle(
-                        fontSize: 56,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -1.5,
-                        color: categoryColor,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: categoryColor.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: categoryColor.withValues(alpha: 0.5), width: 1),
-                      ),
-                      child: Text(
-                        categoryText.toUpperCase(),
+                Positioned(
+                  bottom: 12,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'CPCB AQI',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: categoryColor,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2,
+                          color: AppColors.textSecondary,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            aqiResult.overallAqi != null ? '$aqi' : '--',
+                            style: const TextStyle(
+                              fontSize: 58,
+                              fontWeight: FontWeight.w800,
+                              height: 1.05,
+                              letterSpacing: -1.5,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              'AQI',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: categoryColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: categoryColor.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: categoryColor.withValues(alpha: 0.4),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          categoryText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                            color: categoryColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Endpoints 0 and 500
+                Positioned(
+                  left: 20,
+                  bottom: 4,
+                  child: const Text(
+                    '0',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textMuted,
                     ),
-                  ],
+                  ),
+                ),
+                Positioned(
+                  right: 20,
+                  bottom: 4,
+                  child: const Text(
+                    '500',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+
+          const SizedBox(height: 14),
+
+          // Prominent Pollutant info pill
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(10),
+              color: AppColors.surfacePill,
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border, width: 0.8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.bolt, size: 16, color: AppColors.cyanAccent),
+                Icon(Icons.bolt, size: 16, color: categoryColor),
                 const SizedBox(width: 6),
                 const Text(
                   'Prominent Pollutant: ',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 Text(
                   prominentPollutant,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
                   ),
@@ -125,66 +179,79 @@ class FuturisticAqiGauge extends StatelessWidget {
   }
 }
 
-class _AqiGaugePainter extends CustomPainter {
+class _SpeedometerArcPainter extends CustomPainter {
   final int aqi;
   final Color categoryColor;
 
-  _AqiGaugePainter({required this.aqi, required this.categoryColor});
+  _SpeedometerArcPainter({
+    required this.aqi,
+    required this.categoryColor,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 16;
-    const startAngle = 135 * (math.pi / 180);
-    const sweepAngle = 270 * (math.pi / 180);
+    final center = Offset(size.width / 2, size.height - 18);
+    final radius = math.min(size.width / 2 - 28, size.height - 28);
 
-    // Background track
+    // Arch goes from 180° to 360° (0°)
+    const startAngle = math.pi;
+    const sweepAngle = math.pi;
+
+    // 1. Draw outer radial tick dashes (Dribbble style)
+    final tickCount = 31;
+    final tickPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+
+    final progressFraction = (aqi / 500.0).clamp(0.0, 1.0);
+    final activeTicks = (progressFraction * (tickCount - 1)).round();
+
+    for (int i = 0; i < tickCount; i++) {
+      final tickAngle = startAngle + (sweepAngle * (i / (tickCount - 1)));
+      final cosA = math.cos(tickAngle);
+      final sinA = math.sin(tickAngle);
+
+      final rOuter = radius + 12;
+      final rInner = radius + (i % 5 == 0 ? 3 : 6);
+
+      final p1 = Offset(center.dx + rInner * cosA, center.dy + rInner * sinA);
+      final p2 = Offset(center.dx + rOuter * cosA, center.dy + rOuter * sinA);
+
+      if (i <= activeTicks) {
+        tickPaint.color = categoryColor.withValues(alpha: 0.85);
+      } else {
+        tickPaint.color = AppColors.border;
+      }
+
+      canvas.drawLine(p1, p2, tickPaint);
+    }
+
+    // 2. Background Track Arc
     final trackPaint = Paint()
-      ..color = AppColors.border.withValues(alpha: 0.5)
+      ..color = AppColors.borderLight
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 14
+      ..strokeWidth = 12
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      startAngle,
-      sweepAngle,
-      false,
-      trackPaint,
-    );
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawArc(rect, startAngle, sweepAngle, false, trackPaint);
 
-    // Active progress arc (0 to 500 CPCB scale)
-    final progress = (aqi / 500.0).clamp(0.0, 1.0);
-    final activeSweep = sweepAngle * progress;
+    // 3. Active Progress Arc
+    final activeSweep = sweepAngle * progressFraction;
+    if (activeSweep > 0.01) {
+      final progressPaint = Paint()
+        ..color = categoryColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 12
+        ..strokeCap = StrokeCap.round;
 
-    final progressPaint = Paint()
-      ..shader = SweepGradient(
-        startAngle: startAngle,
-        endAngle: startAngle + sweepAngle,
-        colors: [
-          AppColors.aqiGood,
-          AppColors.aqiModerate,
-          categoryColor,
-        ],
-        stops: const [0.0, 0.4, 1.0],
-      ).createShader(Rect.fromCircle(center: center, radius: radius))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 14
-      ..strokeCap = StrokeCap.round;
-
-    if (activeSweep > 0) {
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        activeSweep,
-        false,
-        progressPaint,
-      );
+      canvas.drawArc(rect, startAngle, activeSweep, false, progressPaint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _AqiGaugePainter oldDelegate) {
+  bool shouldRepaint(covariant _SpeedometerArcPainter oldDelegate) {
     return oldDelegate.aqi != aqi || oldDelegate.categoryColor != categoryColor;
   }
 }

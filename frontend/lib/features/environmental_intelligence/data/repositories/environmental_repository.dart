@@ -105,37 +105,24 @@ class EnvironmentalRepository {
     int? historical24hAvgAqi,
   }) async {
     try {
-      final obs = assessment.observation;
+      final obs = assessment.observation ??
+          EnvironmentalObservation(
+            stationId: assessment.station?.stationId ?? 'LOCAL-001',
+            stationName: assessment.station?.stationName ?? 'Regional Sensor',
+            location: assessment.station?.location ?? assessment.aqiResult.location,
+            timestamp: assessment.aqiResult.observationTimestamp,
+            provider: assessment.aqiResult.provider,
+            dataSourceType: assessment.aqiResult.dataSourceType,
+          );
       final aqi = assessment.aqiResult;
       final risk = assessment.riskAssessment;
 
       final payload = {
-        'station_id': assessment.station?.stationId ?? obs?.stationId ?? 'LOCAL-001',
-        'station_name': assessment.station?.stationName ?? obs?.stationName ?? 'Regional Sensor',
-        'latitude': assessment.station?.location.latitude ?? obs?.location.latitude ?? 28.61,
-        'longitude': assessment.station?.location.longitude ?? obs?.location.longitude ?? 77.20,
-        'data_source_type': obs?.dataSourceType ?? 'PHYSICAL_STATION',
-        'provider': obs?.provider ?? 'AirGuard Pipeline',
-        'observation_timestamp': obs?.timestamp.toIso8601String() ?? DateTime.now().toIso8601String(),
-        'overall_aqi': aqi.overallAqi,
-        'aqi_category': aqi.category,
-        'prominent_pollutant': aqi.prominentPollutant,
-        'pollutant_sub_indices': aqi.subIndices,
-        'pollutant_concentrations': {
-          if (obs?.pm25 != null) 'PM2.5': obs!.pm25!,
-          if (obs?.pm10 != null) 'PM10': obs!.pm10!,
-          if (obs?.no2 != null) 'NO2': obs!.no2!,
-          if (obs?.so2 != null) 'SO2': obs!.so2!,
-          if (obs?.co != null) 'CO': obs!.co!,
-          if (obs?.o3 != null) 'O3': obs!.o3!,
-        },
-        'temperature_celsius': obs?.temperatureCelsius,
-        'relative_humidity_pct': obs?.relativeHumidityPct,
-        'wind_speed_kmh': obs?.windSpeedKmh,
-        'exposure_risk_score': risk.riskScore,
-        'exposure_risk_level': risk.riskLevel,
-        'risk_primary_driver': risk.primaryDriver,
-        'historical_24h_avg_aqi': historical24hAvgAqi,
+        'observation': obs.toJson(),
+        'aqi_result': aqi.toJson(),
+        'risk_assessment': risk.toJson(),
+        if (historical24hAvgAqi != null)
+          'historical_24h_avg_pm25': historical24hAvgAqi.toDouble(),
       };
 
       final response = await _client.post(

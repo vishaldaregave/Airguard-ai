@@ -11,6 +11,7 @@ class ApiConstants {
 
   // Milestone 2 Live Pipeline endpoints
   static const String locationsNearby = '/api/v1/locations/nearby';
+  static const String locationDetectIp = '/api/v1/locations/detect-ip';
   static const String stationsNearby = '/api/v1/stations/nearby';
   static const String stationDetails = '/api/v1/stations';
   static const String airCurrent = '/api/v1/air/current';

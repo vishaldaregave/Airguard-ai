@@ -2,34 +2,52 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 class AppTheme {
-  static ThemeData get darkTheme {
+  static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: Brightness.light,
       scaffoldBackgroundColor: AppColors.background,
-      colorScheme: const ColorScheme.dark(
-        primary: AppColors.emeraldAccent,
-        secondary: AppColors.cyanAccent,
+      colorScheme: const ColorScheme.light(
+        primary: AppColors.primaryBlue,
+        secondary: AppColors.skyBlue,
         surface: AppColors.surface,
         onSurface: AppColors.textPrimary,
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
+        iconTheme: IconThemeData(color: AppColors.textPrimary),
         titleTextStyle: TextStyle(
           color: AppColors.textPrimary,
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
+          letterSpacing: 0.2,
         ),
       ),
       cardTheme: CardThemeData(
         color: AppColors.surfaceCard,
         elevation: 0,
+        shadowColor: const Color(0x0C1E3A8A),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(22),
           side: const BorderSide(color: AppColors.border, width: 1),
+        ),
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppColors.surface,
+        selectedItemColor: AppColors.primaryBlue,
+        unselectedItemColor: AppColors.textMuted,
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
+        selectedLabelStyle: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
         ),
       ),
       dividerTheme: const DividerThemeData(
@@ -47,16 +65,17 @@ class AppTheme {
           color: AppColors.textPrimary,
           fontSize: 24,
           fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
         ),
         titleLarge: TextStyle(
           color: AppColors.textPrimary,
           fontSize: 18,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
         ),
         titleMedium: TextStyle(
           color: AppColors.textPrimary,
           fontSize: 15,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
         ),
         bodyLarge: TextStyle(
           color: AppColors.textPrimary,
@@ -73,9 +92,12 @@ class AppTheme {
           color: AppColors.textMuted,
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.8,
+          letterSpacing: 0.4,
         ),
       ),
     );
   }
+
+  // Backwards compatibility alias
+  static ThemeData get darkTheme => lightTheme;
 }

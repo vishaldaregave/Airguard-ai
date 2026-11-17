@@ -21,6 +21,14 @@ class RiskFactorContribution {
       explanation: json['explanation'] as String,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'factor_name': factorName,
+      'contribution_score': contributionScore,
+      'explanation': explanation,
+    };
+  }
 }
 
 class ActivityRecommendation {
@@ -41,6 +49,14 @@ class ActivityRecommendation {
       feasibility: json['feasibility'] as String,
       guidance: json['guidance'] as String,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'activity_type': activityType,
+      'feasibility': feasibility,
+      'guidance': guidance,
+    };
   }
 }
 
@@ -82,6 +98,18 @@ class EnvironmentalRiskScore {
       activityRecommendations: recsList,
       disclaimer: json['disclaimer'] as String? ?? '',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'risk_score': riskScore,
+      'risk_level': riskLevel,
+      'risk_summary': riskSummary,
+      'primary_driver': primaryDriver,
+      'breakdown': breakdown.map((e) => e.toJson()).toList(),
+      'activity_recommendations': activityRecommendations.map((e) => e.toJson()).toList(),
+      'disclaimer': disclaimer,
+    };
   }
 }
 

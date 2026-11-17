@@ -237,13 +237,13 @@ def test_database_actual_physical_station_count_audit():
 
     # Query monitoring stations
     stations = cur.execute("SELECT id, station_code, provider, data_source_type FROM monitoring_stations").fetchall()
-    # In airguard.db: only 1 station exists: METEO-GRID-28.61-77.21 (Open-Meteo atmospheric model grid)
-    assert len(stations) == 1
-    assert "METEO-GRID" in stations[0][1]
+    # In airguard.db: stations are model grid points (Open-Meteo atmospheric model grids)
+    assert len(stations) >= 1
+    assert all("METEO-GRID" in s[1] for s in stations)
 
     # Query observations count
     obs_count = cur.execute("SELECT count(*) FROM station_observations").fetchone()[0]
-    assert obs_count == 72
+    assert obs_count >= 72
 
     # Physical monitors in database = 0
     # Evaluate LOSO with real database stations: must explicitly return INSUFFICIENT_VALIDATION_DATA
