@@ -15,6 +15,7 @@ import '../widgets/ai_explanation_card.dart';
 import 'station_selector_sheet.dart';
 import 'alert_inbox_screen.dart';
 import 'geo_map_screen.dart';
+import 'exposure_simulator_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -67,6 +68,16 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          // Personal Exposure Simulator (Milestone 5.2)
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ExposureSimulatorScreen()),
+              );
+            },
+            icon: const Icon(Icons.timer_outlined, color: AppColors.emeraldAccent),
+            tooltip: 'Personal Exposure Simulator',
+          ),
           // Geographic Intelligence & Spatial Map (Milestone 5.1)
           IconButton(
             onPressed: () {
@@ -374,6 +385,69 @@ class DashboardScreen extends ConsumerWidget {
 
           // Explainable Exposure Risk Meter
           ExposureRiskMeter(riskAssessment: assessment.riskAssessment),
+          const SizedBox(height: 14),
+
+          // Personal Exposure Simulator Banner (Milestone 5.2)
+          InkWell(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ExposureSimulatorScreen()),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.surfaceCard,
+                    AppColors.cyanAccent.withValues(alpha: 0.08),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.cyanAccent.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.cyanAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.cyanAccent.withValues(alpha: 0.5)),
+                    ),
+                    child: const Icon(Icons.timer_outlined, color: AppColors.cyanAccent, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PERSONAL EXPOSURE SIMULATOR',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.0,
+                            color: AppColors.cyanAccent,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Estimate cumulative inhaled mass based on activity (Resting, Walking, Running) and duration.',
+                          style: TextStyle(fontSize: 10, color: AppColors.textSecondary, height: 1.3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: AppColors.cyanAccent),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 14),
 
           // CPCB Health Advisory

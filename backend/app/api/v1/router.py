@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     history,
     alerts,
     geo,
+    exposure,
 )
 
 api_router = APIRouter()
@@ -27,3 +28,4 @@ api_router.include_router(ai.router, prefix="/ai", tags=["AI Environmental Expla
 api_router.include_router(history.router, prefix="/history", tags=["Historical Data Foundation"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["Smart Environmental Alerts & Notifications"])
 api_router.include_router(geo.router, tags=["Geographic Intelligence"])
+api_router.include_router(exposure.router, prefix="/exposure", tags=["Personal Environmental Exposure Simulator"])

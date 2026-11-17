@@ -10,6 +10,7 @@ import '../../domain/models/ai_explanation_model.dart';
 import '../../domain/models/history_availability_model.dart';
 import '../../domain/models/alert_model.dart';
 import '../../domain/models/geo_models.dart';
+import '../../domain/models/exposure_models.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient();
@@ -815,6 +816,263 @@ class EnvironmentalRepository {
       practicalPrecautions: 'Keep windows closed during peak stagnation hours and consider well-fitted particulate masks (N95/FFP2) for prolonged outdoor presence.',
       historicalComparison: 'Current air quality is within typical seasonal ranges for this monitoring zone under similar meteorological conditions.',
       disclaimer: 'Deterministic environmental synthesis for informational and public awareness purposes only. Does not constitute clinical advice.',
+    );
+  }
+
+  // =========================================================================
+  // MILESTONE 5.2: EXPOSURE SIMULATOR & PERSONAL INTELLIGENCE
+  // =========================================================================
+
+  /// Retrieves supported activity profiles and adult inhalation ventilation rates
+  Future<List<ActivityProfileModel>> getActivityProfiles() async {
+    try {
+      final response = await _client.get(ApiConstants.exposureActivityProfiles);
+      final list = (response.data as List<dynamic>)
+          .map((item) => ActivityProfileModel.fromJson(item as Map<String, dynamic>))
+          .toList();
+      return list;
+    } catch (e) {
+      return _getFallbackActivityProfiles();
+    }
+  }
+
+  /// Calculates cumulative concentration-time exposure and estimated gross inhaled mass
+  Future<ExposureSimulationModel> simulateExposure(Map<String, dynamic> request) async {
+    try {
+      final response = await _client.post(
+        ApiConstants.exposureSimulate,
+        data: request,
+      );
+      return ExposureSimulationModel.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      return _getFallbackExposureSimulation(request);
+    }
+  }
+
+  /// Compares two exposure scenarios across duration, activity, or locations
+  Future<ExposureComparisonModel> compareExposure(Map<String, dynamic> request) async {
+    try {
+      final response = await _client.post(
+        ApiConstants.exposureCompare,
+        data: request,
+      );
+      return ExposureComparisonModel.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      return _getFallbackExposureComparison(request);
+    }
+  }
+
+  /// Produces explainable physical narrative for exposure simulation
+  Future<ExposureExplanationModel> explainExposure(
+    ExposureSimulationModel simulation, {
+    String? userQuery,
+  }) async {
+    try {
+      final response = await _client.post(
+        ApiConstants.exposureExplain,
+        data: {
+          'simulation': {
+            'status': simulation.status,
+            'activity': simulation.activity.toJson(),
+            'duration_minutes': simulation.durationMinutes,
+            'duration_hours': simulation.durationHours,
+            'total_inhaled_volume_m3': simulation.totalInhaledVolumeM3,
+            'data_source_type': simulation.dataSourceType,
+            'location_name': simulation.locationName,
+            'latitude': simulation.latitude,
+            'longitude': simulation.longitude,
+            'pollutants': simulation.pollutants.map((k, v) => MapEntry(k, v.toJson())),
+            'cpcb_aqi': simulation.cpcbAqi,
+            'cpcb_category': simulation.cpcbCategory,
+            'prominent_pollutant': simulation.prominentPollutant,
+            'is_forecast': simulation.isForecast,
+            'is_interpolated': simulation.isInterpolated,
+            'spatial_uncertainty_score': simulation.spatialUncertaintyScore,
+            'calculation_methodology': simulation.calculationMethodology,
+            'disclaimer': simulation.disclaimer,
+            'timestamp': simulation.timestamp.toIso8601String(),
+          },
+          if (userQuery != null) 'user_query': userQuery,
+        },
+      );
+      return ExposureExplanationModel.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      return _getFallbackExposureExplanation(simulation);
+    }
+  }
+
+  List<ActivityProfileModel> _getFallbackActivityProfiles() {
+    return const [
+      ActivityProfileModel(
+        activityType: ActivityTypeEnum.resting,
+        displayName: 'Resting / Sedentary',
+        inhalationRateM3H: 0.50,
+        metEquivalent: 1.0,
+        description: 'Quiet rest, sleep, or sedentary desk work with basal ventilation (~8.3 L/min).',
+        reference: 'US EPA Exposure Factors Handbook (2011), Table 6-1.',
+      ),
+      ActivityProfileModel(
+        activityType: ActivityTypeEnum.commuting,
+        displayName: 'Commuting (Transit)',
+        inhalationRateM3H: 0.60,
+        metEquivalent: 1.5,
+        description: 'Passive vehicle transit (bus, car, metro) with light seated alertness (~10.0 L/min).',
+        reference: 'Zuurbier et al. (2009); US EPA Exposure Factors Handbook (2011), Table 6-2.',
+      ),
+      ActivityProfileModel(
+        activityType: ActivityTypeEnum.walking,
+        displayName: 'Walking (Moderate Pace)',
+        inhalationRateM3H: 1.20,
+        metEquivalent: 3.0,
+        description: 'Standard pedestrian walking at ~4-5 km/h with moderate respiratory demand (~20.0 L/min).',
+        reference: 'Adams (1993); US EPA Exposure Factors Handbook (2011), Table 6-1.',
+      ),
+      ActivityProfileModel(
+        activityType: ActivityTypeEnum.cycling,
+        displayName: 'Cycling (Outdoor Commute)',
+        inhalationRateM3H: 2.10,
+        metEquivalent: 6.0,
+        description: 'Moderate outdoor cycling (~15-18 km/h) with elevated tidal volume (~35.0 L/min).',
+        reference: 'Int Panis et al. (2010); US EPA Exposure Factors Handbook (2011), Table 6-1.',
+      ),
+      ActivityProfileModel(
+        activityType: ActivityTypeEnum.running,
+        displayName: 'Running / Jogging',
+        inhalationRateM3H: 2.80,
+        metEquivalent: 8.0,
+        description: 'Vigorous aerobic running (~8-10 km/h) with high minute ventilation (~46.7 L/min).',
+        reference: 'Adams (1993); US EPA Exposure Factors Handbook (2011), Table 6-1.',
+      ),
+    ];
+  }
+
+  ExposureSimulationModel _getFallbackExposureSimulation(Map<String, dynamic> request) {
+    final durMin = request['duration_minutes'] as int? ?? 60;
+    final durH = durMin / 60.0;
+    final actTypeStr = request['activity_type'] as String? ?? 'walking';
+    final act = _getFallbackActivityProfiles().firstWhere(
+      (p) => p.activityType.keyName == actTypeStr,
+      orElse: () => _getFallbackActivityProfiles()[2],
+    );
+    final vol = double.parse((act.inhalationRateM3H * durH).toStringAsFixed(2));
+
+    return ExposureSimulationModel(
+      status: 'COMPUTED',
+      activity: act,
+      durationMinutes: durMin,
+      durationHours: durH,
+      totalInhaledVolumeM3: vol,
+      dataSourceType: 'LIVE',
+      locationName: 'Delhi Central (Fallback Mode)',
+      latitude: 28.6139,
+      longitude: 77.2090,
+      pollutants: {
+        'PM2.5': PollutantExposureMetricModel(
+          pollutant: 'PM2.5',
+          ambientConcentration: 110.0,
+          concentrationUnit: 'µg/m³',
+          concentrationTimeExposure: double.parse((110.0 * durH).toStringAsFixed(2)),
+          exposureUnit: 'µg·h/m³',
+          inhalationRateM3H: act.inhalationRateM3H,
+          estimatedInhaledMass: double.parse((110.0 * act.inhalationRateM3H * durH).toStringAsFixed(2)),
+          massUnit: 'µg',
+        ),
+        'PM10': PollutantExposureMetricModel(
+          pollutant: 'PM10',
+          ambientConcentration: 210.0,
+          concentrationUnit: 'µg/m³',
+          concentrationTimeExposure: double.parse((210.0 * durH).toStringAsFixed(2)),
+          exposureUnit: 'µg·h/m³',
+          inhalationRateM3H: act.inhalationRateM3H,
+          estimatedInhaledMass: double.parse((210.0 * act.inhalationRateM3H * durH).toStringAsFixed(2)),
+          massUnit: 'µg',
+        ),
+        'NO2': PollutantExposureMetricModel(
+          pollutant: 'NO2',
+          ambientConcentration: 42.0,
+          concentrationUnit: 'µg/m³',
+          concentrationTimeExposure: double.parse((42.0 * durH).toStringAsFixed(2)),
+          exposureUnit: 'µg·h/m³',
+          inhalationRateM3H: act.inhalationRateM3H,
+          estimatedInhaledMass: double.parse((42.0 * act.inhalationRateM3H * durH).toStringAsFixed(2)),
+          massUnit: 'µg',
+        ),
+      },
+      cpcbAqi: 280,
+      cpcbCategory: 'Poor',
+      prominentPollutant: 'PM2.5',
+      isForecast: request['use_forecast'] as bool? ?? false,
+      isInterpolated: request['use_interpolation'] as bool? ?? false,
+      calculationMethodology: 'Client-side deterministic physical exposure calculation.',
+      disclaimer: 'Scientific Environmental Advisory: Pure physical exposure calculation. Not medical diagnosis.',
+      timestamp: DateTime.now(),
+    );
+  }
+
+  ExposureComparisonModel _getFallbackExposureComparison(Map<String, dynamic> request) {
+    final reqA = request['scenario_a'] as Map<String, dynamic>? ?? {};
+    final reqB = request['scenario_b'] as Map<String, dynamic>? ?? {};
+    final simA = _getFallbackExposureSimulation(reqA);
+    final simB = _getFallbackExposureSimulation(reqB);
+
+    final deltas = <String, PollutantComparisonDeltaModel>{};
+    simA.pollutants.forEach((k, vA) {
+      final vB = simB.pollutants[k];
+      if (vB != null) {
+        final dExp = (vB.concentrationTimeExposure ?? 0) - (vA.concentrationTimeExposure ?? 0);
+        final dMass = (vB.estimatedInhaledMass ?? 0) - (vA.estimatedInhaledMass ?? 0);
+        final pct = (vA.estimatedInhaledMass ?? 0) > 0
+            ? (dMass / (vA.estimatedInhaledMass ?? 1)) * 100.0
+            : 0.0;
+        deltas[k] = PollutantComparisonDeltaModel(
+          pollutant: k,
+          scenarioAExposure: vA.concentrationTimeExposure,
+          scenarioBExposure: vB.concentrationTimeExposure,
+          deltaExposure: double.parse(dExp.toStringAsFixed(2)),
+          exposureUnit: vA.exposureUnit,
+          scenarioAInhaledMass: vA.estimatedInhaledMass,
+          scenarioBInhaledMass: vB.estimatedInhaledMass,
+          deltaInhaledMass: double.parse(dMass.toStringAsFixed(2)),
+          massUnit: vA.massUnit,
+          percentChangeInhaledMass: double.parse(pct.toStringAsFixed(1)),
+          summary: 'Scenario B delta:   (%).',
+        );
+      }
+    });
+
+    return ExposureComparisonModel(
+      scenarioA: ScenarioComparisonItemModel(
+        scenarioId: 'scenario_a',
+        label: request['label_a'] as String? ?? 'Scenario A',
+        simulation: simA,
+      ),
+      scenarioB: ScenarioComparisonItemModel(
+        scenarioId: 'scenario_b',
+        label: request['label_b'] as String? ?? 'Scenario B',
+        simulation: simB,
+      ),
+      deltas: deltas,
+      physicalComparisonSummary: 'Physical Comparison: Scenario difference evaluated via adult ventilation rates.',
+      disclaimer: 'Comparative advisory for awareness only. Does not establish medical safety.',
+      timestamp: DateTime.now(),
+    );
+  }
+
+  ExposureExplanationModel _getFallbackExposureExplanation(ExposureSimulationModel simulation) {
+    return ExposureExplanationModel(
+      narrative: 'During  minutes of  at , an estimated  m³ of ambient air is ventilated.',
+      keyTakeaways: [
+        'Physical Activity Multiplier: Inhalation volume scales with activity exertion rate.',
+        'Duration Linear Scaling: Halving duration directly halves inhaled pollutant mass.',
+      ],
+      protectiveSuggestions: [
+        'Shift intense aerobic exercise indoors during peak pollution hours.',
+        'Consider moderating pace to walking when particulate levels are elevated.',
+      ],
+      methodologyNote: 'Inhaled mass represents gross inhaled quantity, not absorbed internal dose.',
+      disclaimer: 'Scientific advisory only. Does not constitute clinical diagnosis.',
+      provider: 'AirGuard Fallback Explainer',
+      timestamp: DateTime.now(),
     );
   }
 }

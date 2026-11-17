@@ -37,6 +37,12 @@ class ApiConstants {
   static const String geoHotspots = '/api/v1/geo/hotspots';
   static const String geoCoverage = '/api/v1/geo/coverage';
 
+  // Milestone 5.2 Exposure Simulator endpoints
+  static const String exposureActivityProfiles = '/api/v1/exposure/activity-profiles';
+  static const String exposureSimulate = '/api/v1/exposure/simulate';
+  static const String exposureCompare = '/api/v1/exposure/compare';
+  static const String exposureExplain = '/api/v1/exposure/explain';
+
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
 }
