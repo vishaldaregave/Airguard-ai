@@ -4,6 +4,7 @@ import '../../features/environmental_intelligence/presentation/screens/alert_inb
 import '../../features/environmental_intelligence/presentation/screens/alert_preferences_screen.dart';
 import '../../features/environmental_intelligence/presentation/screens/geo_map_screen.dart';
 import '../../features/environmental_intelligence/presentation/screens/exposure_simulator_screen.dart';
+import '../../features/environmental_intelligence/presentation/screens/historical_intelligence_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -27,6 +28,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/exposure',
       builder: (context, state) => const ExposureSimulatorScreen(),
+    ),
+    GoRoute(
+      path: '/history',
+      builder: (context, state) => const HistoricalIntelligenceScreen(),
     ),
   ],
 );

@@ -43,6 +43,17 @@ class ApiConstants {
   static const String exposureCompare = '/api/v1/exposure/compare';
   static const String exposureExplain = '/api/v1/exposure/explain';
 
+  // Milestone 5.4 Historical Environmental Intelligence endpoints
+  static const String historySummary = '/api/v1/history/summary';
+  static const String historyTrends = '/api/v1/history/trends';
+  static const String historyPollutants = '/api/v1/history/pollutants';
+  static const String historyExtremes = '/api/v1/history/extremes';
+  static const String historyCalendar = '/api/v1/history/calendar';
+  static const String historyCompare = '/api/v1/history/compare';
+  static const String historyCoverage = '/api/v1/history/coverage';
+  static const String historyReport = '/api/v1/history/report';
+  static const String historyExplain = '/api/v1/history/explain';
+
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
 }

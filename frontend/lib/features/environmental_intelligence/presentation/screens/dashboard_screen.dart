@@ -16,6 +16,7 @@ import 'station_selector_sheet.dart';
 import 'alert_inbox_screen.dart';
 import 'geo_map_screen.dart';
 import 'exposure_simulator_screen.dart';
+import 'historical_intelligence_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -68,6 +69,16 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          // Historical Environmental Intelligence (Milestone 5.4)
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HistoricalIntelligenceScreen()),
+              );
+            },
+            icon: const Icon(Icons.history_toggle_off, color: AppColors.cyanAccent),
+            tooltip: 'Historical Environmental Intelligence',
+          ),
           // Personal Exposure Simulator (Milestone 5.2)
           IconButton(
             onPressed: () {
@@ -385,6 +396,69 @@ class DashboardScreen extends ConsumerWidget {
 
           // Explainable Exposure Risk Meter
           ExposureRiskMeter(riskAssessment: assessment.riskAssessment),
+          const SizedBox(height: 14),
+
+          // Historical Environmental Intelligence Banner (Milestone 5.4)
+          InkWell(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HistoricalIntelligenceScreen()),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.surfaceCard,
+                    AppColors.cobaltAccent.withValues(alpha: 0.08),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.cobaltAccent.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.cobaltAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.cobaltAccent.withValues(alpha: 0.5)),
+                    ),
+                    child: const Icon(Icons.history_toggle_off, color: AppColors.cobaltAccent, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'HISTORICAL POLLUTION ANALYTICS',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.0,
+                            color: AppColors.cobaltAccent,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Audit empirical trends, daily CPCB calendar, diurnal inversion patterns & location comparisons.',
+                          style: TextStyle(fontSize: 10, color: AppColors.textSecondary, height: 1.3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: AppColors.cobaltAccent),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 14),
 
           // Personal Exposure Simulator Banner (Milestone 5.2)
