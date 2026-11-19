@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 class AppColors {
   // Atmospheric Sky-Blue Palette (Inspired by Dribbble UI)
   static const Color background = Color(0xFFF1F6FD);
+  // Base tint behind the cloudy sky backdrop.
+  static const Color skyBase = Color(0xFFE9F3FC);
+  static const Color cloudTint = Color(0xFFFFFFFF);
   static const Color backgroundGradientStart = Color(0xFFE8F2FC);
   static const Color backgroundGradientEnd = Color(0xFFD4E7F8);
 
@@ -74,10 +77,16 @@ class AppColors {
 
   static List<BoxShadow> get cardShadow => [
     const BoxShadow(
-      color: Color(0x0C1E3A8A),
-      blurRadius: 18,
+      color: Color(0x0A1E3A8A),
+      blurRadius: 16,
       spreadRadius: 0,
-      offset: Offset(0, 4),
+      offset: Offset(0, 3),
+    ),
+    const BoxShadow(
+      color: Color(0x050F172A),
+      blurRadius: 2,
+      spreadRadius: 0,
+      offset: Offset(0, 1),
     ),
   ];
 }

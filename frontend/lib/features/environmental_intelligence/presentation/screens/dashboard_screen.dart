@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/cloudy_background.dart';
 import '../controllers/environmental_controller.dart';
 import '../controllers/alert_controller.dart';
 import '../widgets/data_integrity_badge.dart';
@@ -62,18 +63,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final controller = ref.read(environmentalControllerProvider.notifier);
     final alertState = ref.watch(alertControllerProvider);
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFEAF3FB),
-            Color(0xFFDCEAF7),
-            Color(0xFFF1F6FD),
-          ],
-        ),
-      ),
+    return CloudyBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -83,40 +73,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           title: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: AppColors.primaryBlue.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+                  color: AppColors.primaryBlue.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
                   Icons.air,
                   color: AppColors.primaryBlue,
-                  size: 20,
+                  size: 19,
                 ),
               ),
-              const SizedBox(width: 8),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'AIRGUARD AI',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  Text(
-                    'ENVIRONMENTAL INTELLIGENCE',
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: AppColors.primaryBlue,
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 10),
+              const Text(
+                'AirGuard',
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ],
           ),
@@ -224,13 +200,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
 
               // Tab 1: Map View (Geographic Intelligence)
-              const GeoMapScreen(),
+              const GeoMapScreen(embedded: true),
 
               // Tab 2: Forecast (Hourly & 7-Day projections)
               const ForecastTabScreen(),
 
               // Tab 3: History (Historical Environmental Intelligence & Analytics)
-              const HistoricalIntelligenceScreen(),
+              const HistoricalIntelligenceScreen(embedded: true),
             ],
           ),
         ),
@@ -352,14 +328,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
 
     final station = state.selectedStation ?? assessment.station;
-    final stationName = station?.stationName ?? currentObs?.stationName ?? 'Regional Monitoring Point';
+    final stationName = station?.stationName ??
+        currentObs?.stationName ??
+        'Regional Monitoring Point';
     final stationCity = station?.location.city ?? currentObs?.location.city ?? 'Local Area';
     final distKm = assessment.distanceFromQueryKm ?? station?.distanceKm;
     final riskAssessment = assessment.riskAssessment;
 
     // Location display text
     final loc = state.userLocation;
-    final locationText = loc?.displayLocation ?? (stationCity.isNotEmpty ? stationCity : 'Pune, Maharashtra');
+    final locationText = loc?.displayLocation ??
+        (stationCity.isNotEmpty ? stationCity : 'Choose location');
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -367,90 +346,99 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Dribbble-Style Location Selector Pill
-          Center(
-            child: InkWell(
-              onTap: () => _openLocationSheet(context, state, controller),
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: AppColors.cardShadow,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.location_on, size: 16, color: AppColors.primaryBlue),
-                    const SizedBox(width: 6),
-                    Text(
-                      locationText,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down, size: 16, color: AppColors.textSecondary),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Station Selector Info Pill
+          // Location + station selector (single merged card)
           InkWell(
             onTap: () => _openLocationSheet(context, state, controller),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
               decoration: BoxDecoration(
-                color: AppColors.surfaceCard,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border, width: 1),
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.border),
                 boxShadow: AppColors.cardShadow,
               ),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(7),
+                    padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryBlue.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
+                      color: AppColors.primaryBlue.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.sensors, size: 18, color: AppColors.primaryBlue),
+                    child: Icon(
+                      loc?.isGpsLive == true
+                          ? Icons.my_location
+                          : Icons.location_on,
+                      size: 19,
+                      color: AppColors.primaryBlue,
+                    ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          stationName,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                locationText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                            if (loc?.isApproximate == true) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: AppColors.amberAccent
+                                      .withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: const Text(
+                                  'approx',
+                                  style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.amberAccent,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
+                        const SizedBox(height: 3),
                         Text(
-                          '$stationCity ${distKm != null ? "• ${distKm.toStringAsFixed(1)} km away" : ""}',
-                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          distKm != null
+                              ? '$stationName · ${distKm.toStringAsFixed(1)} km'
+                              : stationName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(Icons.unfold_more, size: 18, color: AppColors.textMuted),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.expand_more,
+                      size: 20, color: AppColors.textMuted),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
 
           // Data Integrity Badge
           DataIntegrityBadge(
@@ -525,14 +513,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       const SizedBox(height: 8),
                       Text(
                         assessment.aqiResult.overallAqi != null && assessment.aqiResult.overallAqi! <= 100
-                            ? 'Optimal Conditions'
-                            : 'Atmospheric Load',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Verified rolling average',
-                        style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                            ? 'Optimal'
+                            : 'Elevated',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                       ),
                     ],
                   ),
@@ -565,16 +548,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       Text(
                         riskAssessment.riskLevel,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: AppColors.getAqiColor(assessment.aqiResult.overallAqi),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        riskAssessment.riskSummary,
-                        style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),

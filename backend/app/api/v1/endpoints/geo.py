@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, HTTPException, status
 
 from app.schemas.geo import (
     GeoCoverageResponse,
+    GeoHeatmapResponse,
     GeoHotspotsResponse,
     GeoObservationItem,
     GeoStationItem,
@@ -121,6 +122,39 @@ async def get_pollution_hotspots(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to detect pollution hotspots: {str(e)}",
+        )
+
+
+@router.get(
+    "/heatmap",
+    response_model=GeoHeatmapResponse,
+    summary="Interpolated pollution heatmap grid",
+    description=(
+        "Builds a gridded interpolated surface (IDW) for AQI or a specific pollutant "
+        "so the client can render a continuous heatmap over the search area."
+    ),
+)
+async def get_pollution_heatmap(
+    latitude: float = Query(..., ge=-90.0, le=90.0, description="Center latitude in decimal degrees"),
+    longitude: float = Query(..., ge=-180.0, le=180.0, description="Center longitude in decimal degrees"),
+    pollutant: str = Query("AQI", description="AQI, PM2.5, PM10, NO2, SO2, CO, or O3"),
+    radius_km: Optional[float] = Query(None, ge=1.0, le=200.0, description="Search radius in kilometers"),
+    grid_resolution: int = Query(14, ge=4, le=30, description="Number of grid cells per edge"),
+    allow_demo: bool = Query(True, description="Whether to permit demo fixtures"),
+):
+    try:
+        return await geo_intelligence_service.get_heatmap(
+            latitude=latitude,
+            longitude=longitude,
+            pollutant=pollutant,
+            radius_km=radius_km,
+            grid_resolution=grid_resolution,
+            allow_demo=allow_demo,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to build pollution heatmap: {str(e)}",
         )
 
 

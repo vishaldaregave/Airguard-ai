@@ -200,6 +200,14 @@ class GeoObservationModel {
     final loc = json['location'] as Map<String, dynamic>? ?? {};
     final pollutants = json['pollutant_concentrations'] as Map<String, dynamic>? ?? {};
 
+    double? concentration(String flatKey, String mapKey) {
+      final flat = json[flatKey];
+      if (flat is num) return flat.toDouble();
+      final nested = pollutants[mapKey];
+      if (nested is num) return nested.toDouble();
+      return null;
+    }
+
     return GeoObservationModel(
       stationId: json['station_id'] as String? ?? '',
       stationName: json['station_name'] as String? ?? 'Monitoring Location',
@@ -209,17 +217,19 @@ class GeoObservationModel {
       longitude: (loc['longitude'] as num?)?.toDouble() ?? 0.0,
       timestamp: DateTime.tryParse(json['timestamp']?.toString() ?? '') ?? DateTime.now(),
       dataSourceType: json['data_source_type'] as String? ?? 'LIVE',
-      aqi: json['aqi'] as int?,
-      aqiCategory: json['aqi_category'] as String?,
-      prominentPollutant: json['prominent_pollutant'] as String?,
-      pm25: (pollutants['PM2.5'] as num?)?.toDouble(),
-      pm10: (pollutants['PM10'] as num?)?.toDouble(),
-      no2: (pollutants['NO2'] as num?)?.toDouble(),
-      so2: (pollutants['SO2'] as num?)?.toDouble(),
-      co: (pollutants['CO'] as num?)?.toDouble(),
-      o3: (pollutants['O3'] as num?)?.toDouble(),
-      nh3: (pollutants['NH3'] as num?)?.toDouble(),
-      pb: (pollutants['Pb'] as num?)?.toDouble(),
+      aqi: (json['aqi'] as num?)?.toInt(),
+      aqiCategory:
+          (json['cpcb_category'] ?? json['aqi_category']) as String?,
+      prominentPollutant:
+          (json['dominant_pollutant'] ?? json['prominent_pollutant']) as String?,
+      pm25: concentration('pm2_5', 'PM2.5'),
+      pm10: concentration('pm10', 'PM10'),
+      no2: concentration('no2', 'NO2'),
+      so2: concentration('so2', 'SO2'),
+      co: concentration('co', 'CO'),
+      o3: concentration('o3', 'O3'),
+      nh3: concentration('nh3', 'NH3'),
+      pb: concentration('pb', 'Pb'),
       temperatureCelsius: (json['temperature_celsius'] as num?)?.toDouble(),
       relativeHumidityPct: (json['relative_humidity_pct'] as num?)?.toDouble(),
       windSpeedKmh: (json['wind_speed_kmh'] as num?)?.toDouble(),
@@ -533,4 +543,89 @@ class GeoCoverageModel {
         return AppColors.aqiSevere;
     }
   }
+}
+
+/// A single interpolated cell of the pollution heatmap surface.
+@immutable
+class HeatmapCellModel {
+  final double latitude;
+  final double longitude;
+  final double value;
+  final double confidence;
+
+  const HeatmapCellModel({
+    required this.latitude,
+    required this.longitude,
+    required this.value,
+    this.confidence = 1.0,
+  });
+
+  factory HeatmapCellModel.fromJson(Map<String, dynamic> json) {
+    return HeatmapCellModel(
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+      value: (json['value'] as num?)?.toDouble() ?? 0.0,
+      confidence: (json['confidence'] as num?)?.toDouble() ?? 1.0,
+    );
+  }
+}
+
+/// Interpolated AQI/pollutant surface covering the search area.
+@immutable
+class GeoHeatmapModel {
+  final double centerLat;
+  final double centerLon;
+  final String pollutant;
+  final String unit;
+  final double searchRadiusKm;
+  final int gridResolution;
+  final List<HeatmapCellModel> cells;
+  final double? minValue;
+  final double? maxValue;
+  final int contributingStationCount;
+  final String dataSourceType;
+  final String disclaimer;
+  final DateTime timestamp;
+
+  const GeoHeatmapModel({
+    required this.centerLat,
+    required this.centerLon,
+    required this.pollutant,
+    required this.unit,
+    required this.searchRadiusKm,
+    required this.gridResolution,
+    this.cells = const [],
+    this.minValue,
+    this.maxValue,
+    this.contributingStationCount = 0,
+    this.dataSourceType = 'ESTIMATED',
+    this.disclaimer = '',
+    required this.timestamp,
+  });
+
+  factory GeoHeatmapModel.fromJson(Map<String, dynamic> json) {
+    final loc = json['center_location'] as Map<String, dynamic>? ?? {};
+    final rawCells = json['cells'] as List<dynamic>? ?? [];
+
+    return GeoHeatmapModel(
+      centerLat: (loc['latitude'] as num?)?.toDouble() ?? 0.0,
+      centerLon: (loc['longitude'] as num?)?.toDouble() ?? 0.0,
+      pollutant: json['pollutant'] as String? ?? 'CPCB AQI',
+      unit: json['unit'] as String? ?? 'index',
+      searchRadiusKm: (json['search_radius_km'] as num?)?.toDouble() ?? 0.0,
+      gridResolution: (json['grid_resolution'] as num?)?.toInt() ?? 0,
+      cells: rawCells
+          .map((c) => HeatmapCellModel.fromJson(c as Map<String, dynamic>))
+          .toList(),
+      minValue: (json['min_value'] as num?)?.toDouble(),
+      maxValue: (json['max_value'] as num?)?.toDouble(),
+      contributingStationCount: json['contributing_station_count'] as int? ?? 0,
+      dataSourceType: json['data_source_type'] as String? ?? 'ESTIMATED',
+      disclaimer: json['disclaimer'] as String? ?? '',
+      timestamp: DateTime.tryParse(json['timestamp']?.toString() ?? '') ??
+          DateTime.now(),
+    );
+  }
+
+  bool get isEmpty => cells.isEmpty;
 }

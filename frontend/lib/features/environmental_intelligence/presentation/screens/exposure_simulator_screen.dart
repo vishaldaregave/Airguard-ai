@@ -14,7 +14,7 @@ class ExposureSimulatorScreen extends ConsumerWidget {
     final controller = ref.read(exposureControllerProvider.notifier);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,

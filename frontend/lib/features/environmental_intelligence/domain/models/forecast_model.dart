@@ -18,14 +18,33 @@ class PollutantPrediction {
   });
 
   factory PollutantPrediction.fromJson(Map<dynamic, dynamic> json) {
+    final ci90 = json['interval_90'];
+    final ci95 = json['interval_95'];
+    double bound(dynamic interval, int index, double fallback) {
+      if (interval is List && interval.length > index) {
+        final v = interval[index];
+        if (v is num) return v.toDouble();
+      }
+      return fallback;
+    }
+
+    final point =
+        ((json['point_estimate'] ?? json['predicted_value']) as num?)
+                ?.toDouble() ??
+            0.0;
+
     return PollutantPrediction(
       pollutant: json['pollutant'] as String? ?? '',
       unit: json['unit'] as String? ?? 'µg/m³',
-      predictedValue: (json['predicted_value'] as num?)?.toDouble() ?? 0.0,
-      ci95Lower: (json['ci95_lower'] as num?)?.toDouble() ?? 0.0,
-      ci95Upper: (json['ci95_upper'] as num?)?.toDouble() ?? 0.0,
-      ci90Lower: (json['ci90_lower'] as num?)?.toDouble() ?? 0.0,
-      ci90Upper: (json['ci90_upper'] as num?)?.toDouble() ?? 0.0,
+      predictedValue: point,
+      ci95Lower: (json['ci95_lower'] as num?)?.toDouble() ??
+          bound(ci95, 0, point),
+      ci95Upper: (json['ci95_upper'] as num?)?.toDouble() ??
+          bound(ci95, 1, point),
+      ci90Lower: (json['ci90_lower'] as num?)?.toDouble() ??
+          bound(ci90, 0, point),
+      ci90Upper: (json['ci90_upper'] as num?)?.toDouble() ??
+          bound(ci90, 1, point),
     );
   }
 
@@ -69,9 +88,10 @@ class HorizonForecastStep {
 
   factory HorizonForecastStep.fromJson(Map<dynamic, dynamic> json) {
     final predictionsMap = <String, PollutantPrediction>{};
-    if (json['pollutant_predictions'] is Map) {
-      final rawMap = json['pollutant_predictions'] as Map;
-      rawMap.forEach((k, v) {
+    final rawPredictions =
+        json['predictions'] ?? json['pollutant_predictions'];
+    if (rawPredictions is Map) {
+      rawPredictions.forEach((k, v) {
         if (v is Map) {
           predictionsMap[k.toString()] = PollutantPrediction.fromJson(v);
         }
@@ -83,11 +103,20 @@ class HorizonForecastStep {
       targetTimestamp: json['target_timestamp'] != null
           ? DateTime.parse(json['target_timestamp'] as String)
           : DateTime.now(),
-      predictedAqi: (json['predicted_aqi'] as num?)?.toInt(),
-      predictedAqiCategory: json['predicted_aqi_category'] as String?,
-      predictedAqiColor: json['predicted_aqi_color'] as String?,
-      predictedAqiProminentPollutant: json['predicted_aqi_prominent_pollutant'] as String?,
-      isCpcbAqiValid: json['is_cpcb_aqi_valid'] as bool? ?? false,
+      predictedAqi:
+          ((json['forecast_aqi'] ?? json['predicted_aqi']) as num?)?.toInt(),
+      predictedAqiCategory:
+          (json['forecast_category'] ?? json['predicted_aqi_category'])
+              as String?,
+      predictedAqiColor:
+          (json['forecast_color_code'] ?? json['predicted_aqi_color'])
+              as String?,
+      predictedAqiProminentPollutant:
+          (json['prominent_pollutant'] ??
+                  json['predicted_aqi_prominent_pollutant'])
+              as String?,
+      isCpcbAqiValid: (json['cpcb_status'] == 'VALID') ||
+          (json['is_cpcb_aqi_valid'] as bool? ?? false),
       pollutantPredictions: predictionsMap,
       temperatureCelsius: (json['temperature_celsius'] as num?)?.toDouble(),
       relativeHumidityPct: (json['relative_humidity_pct'] as num?)?.toDouble(),
@@ -155,17 +184,20 @@ class ForecastCurrentResponse {
   });
 
   factory ForecastCurrentResponse.fromJson(Map<dynamic, dynamic> json) {
-    final list = (json['forecasts'] as List<dynamic>? ?? [])
+    final rawSteps = (json['horizons'] ?? json['forecasts']) as List<dynamic>? ?? [];
+    final list = rawSteps
         .map((e) => HorizonForecastStep.fromJson(e as Map<dynamic, dynamic>))
         .toList();
+
+    final generatedAt = json['forecast_generated_at'] ?? json['base_timestamp'];
 
     return ForecastCurrentResponse(
       status: json['status'] as String? ?? 'ACTIVE',
       stationId: json['station_id'] as String? ?? '',
       stationName: json['station_name'] as String? ?? '',
       dataSourceType: json['data_source_type'] as String? ?? 'PHYSICAL_STATION',
-      baseTimestamp: json['base_timestamp'] != null
-          ? DateTime.parse(json['base_timestamp'] as String)
+      baseTimestamp: generatedAt != null
+          ? DateTime.parse(generatedAt as String)
           : DateTime.now(),
       forecasts: list,
       modelMetadata: ForecastModelMetadata.fromJson(

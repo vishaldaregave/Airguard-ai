@@ -11,7 +11,7 @@ class ApiClient {
   ApiClient({String? baseUrl})
       : dio = Dio(
           BaseOptions(
-            baseUrl: baseUrl ?? ApiConstants.fallbackLocalUrl,
+            baseUrl: baseUrl ?? ApiConstants.resolvedBaseUrl,
             connectTimeout: ApiConstants.connectTimeout,
             receiveTimeout: ApiConstants.receiveTimeout,
             headers: {

@@ -3,9 +3,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:airguard_ai/core/network/api_client.dart';
+import 'package:airguard_ai/core/services/location_service.dart';
 import 'package:airguard_ai/features/environmental_intelligence/data/repositories/environmental_repository.dart';
 import 'package:airguard_ai/features/environmental_intelligence/domain/models/history_analytics_models.dart';
+import 'package:airguard_ai/features/environmental_intelligence/presentation/controllers/history_controller.dart';
 import 'package:airguard_ai/features/environmental_intelligence/presentation/screens/historical_intelligence_screen.dart';
+
+class MockHistoryLocationService extends LocationService {
+  @override
+  Future<UserLocationResult> determinePosition() async {
+    return UserLocationResult(
+      latitude: 28.6139,
+      longitude: 77.2090,
+      isGpsLive: true,
+      statusMessage: 'Mock location',
+      cityName: 'Delhi',
+      stateName: 'Delhi NCR',
+      countryName: 'India',
+    );
+  }
+}
 
 class MockHistoryRepository extends EnvironmentalRepository {
   MockHistoryRepository() : super(ApiClient());
@@ -22,6 +39,8 @@ class MockHistoryRepository extends EnvironmentalRepository {
       provider: 'CPCB Physical Sensor',
       dataSourceType: 'LIVE',
       isPhysicalStation: true,
+      latitude: 28.6469,
+      longitude: 77.3160,
       period: period,
       startTime: now.subtract(const Duration(days: 7)),
       endTime: now,
@@ -370,6 +389,17 @@ void main() {
   });
 
   group('Milestone 5.4: Historical Intelligence Screen Widget Tests', () {
+    test('Regional grid station id follows the requested coordinates', () {
+      expect(
+        HistoryController.stationIdFor(18.5204, 73.8567),
+        'METEO-GRID-18.52-73.86',
+      );
+      expect(
+        HistoryController.stationIdFor(28.6139, 77.2090),
+        'METEO-GRID-28.61-77.21',
+      );
+    });
+
     testWidgets('Renders Historical Intelligence Screen with tabs and KPI metrics', (tester) async {
       await tester.binding.setSurfaceSize(const Size(800, 1200));
 
@@ -377,6 +407,7 @@ void main() {
         ProviderScope(
           overrides: [
             environmentalRepositoryProvider.overrideWithValue(MockHistoryRepository()),
+            locationServiceProvider.overrideWithValue(MockHistoryLocationService()),
           ],
           child: const MaterialApp(
             home: HistoricalIntelligenceScreen(),
@@ -387,8 +418,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Check App Bar
-      expect(find.text('HISTORICAL INTELLIGENCE'), findsOneWidget);
-      expect(find.text('EVIDENCE-DRIVEN ENVIRONMENTAL ANALYTICS'), findsOneWidget);
+      expect(find.text('Historical Intelligence'), findsOneWidget);
 
       // Check Tabs
       expect(find.text('OVERVIEW & TRENDS'), findsOneWidget);
@@ -423,6 +453,7 @@ void main() {
         ProviderScope(
           overrides: [
             environmentalRepositoryProvider.overrideWithValue(MockHistoryRepository()),
+            locationServiceProvider.overrideWithValue(MockHistoryLocationService()),
           ],
           child: const MaterialApp(
             home: HistoricalIntelligenceScreen(),
@@ -455,6 +486,7 @@ void main() {
         ProviderScope(
           overrides: [
             environmentalRepositoryProvider.overrideWithValue(MockHistoryRepository()),
+            locationServiceProvider.overrideWithValue(MockHistoryLocationService()),
           ],
           child: const MaterialApp(
             home: HistoricalIntelligenceScreen(),

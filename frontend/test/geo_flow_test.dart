@@ -6,6 +6,7 @@ import 'package:airguard_ai/core/network/api_client.dart';
 import 'package:airguard_ai/features/environmental_intelligence/data/repositories/environmental_repository.dart';
 import 'package:airguard_ai/features/environmental_intelligence/domain/models/geo_models.dart';
 import 'package:airguard_ai/features/environmental_intelligence/presentation/screens/geo_map_screen.dart';
+import 'package:airguard_ai/features/environmental_intelligence/presentation/widgets/geo_tile_map.dart';
 import 'package:airguard_ai/features/environmental_intelligence/presentation/widgets/geo_station_detail_sheet.dart';
 import 'package:airguard_ai/features/environmental_intelligence/presentation/widgets/geo_interpolation_sheet.dart';
 
@@ -262,7 +263,14 @@ void main() {
   });
 
   group('Geographic Intelligence Widgets & Screens', () {
-    testWidgets('GeoMapScreen renders title, filter chips, and canvas map',
+    test('Map zoom scales inversely with search radius', () {
+      expect(geoZoomForRadius(50), lessThan(geoZoomForRadius(10)));
+      expect(geoZoomForRadius(10), lessThan(geoZoomForRadius(2)));
+      expect(geoZoomForRadius(500), greaterThanOrEqualTo(7.0));
+      expect(geoZoomForRadius(0.1), lessThanOrEqualTo(14.0));
+    });
+
+    testWidgets('GeoMapScreen renders title, filter chips, and basemap',
         (WidgetTester tester) async {
       final mockRepo = MockGeoRepository();
       await tester.pumpWidget(
@@ -279,9 +287,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify title and subtitle
-      expect(find.text('GEOGRAPHIC INTELLIGENCE'), findsOneWidget);
-      expect(find.text('SPATIAL INTERPOLATION & HOTSPOTS'), findsOneWidget);
+      // Verify title
+      expect(find.text('Air Map'), findsOneWidget);
 
       // Verify pollutant chips
       expect(find.text('AQI'), findsOneWidget);

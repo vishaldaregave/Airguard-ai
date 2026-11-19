@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/services/location_service.dart';
 import '../../data/repositories/environmental_repository.dart';
 import '../../domain/models/history_analytics_models.dart';
+import 'environmental_controller.dart';
 
 class HistoryState {
   final String selectedStationId;
@@ -25,8 +27,8 @@ class HistoryState {
   final String? errorMessage;
 
   const HistoryState({
-    this.selectedStationId = 'METEO-GRID-28.61-77.21',
-    this.selectedStationName = 'Open-Meteo Regional Model Grid (Delhi)',
+    this.selectedStationId = '',
+    this.selectedStationName = 'Current Location',
     this.isPhysicalStation = false,
     this.selectedPeriod = '7d',
     this.selectedTab = 0,
@@ -38,7 +40,7 @@ class HistoryState {
     this.comparison,
     this.report,
     this.explanation,
-    this.comparisonStationId = 'DELHI-CPCB-001',
+    this.comparisonStationId = '',
     this.isLoading = false,
     this.isExplaining = false,
     this.isGeneratingReport = false,
@@ -91,14 +93,58 @@ class HistoryState {
 final historyControllerProvider =
     StateNotifierProvider<HistoryController, HistoryState>((ref) {
   final repo = ref.watch(environmentalRepositoryProvider);
-  return HistoryController(repo);
+  final controller = HistoryController(repo);
+
+  void syncTo(UserLocationResult? location) {
+    if (location == null) return;
+    controller.useLocation(location);
+  }
+
+  syncTo(ref.read(environmentalControllerProvider).userLocation);
+
+  ref.listen<UserLocationResult?>(
+    environmentalControllerProvider.select((s) => s.userLocation),
+    (previous, next) {
+      if (next == null) return;
+      if (previous?.latitude == next.latitude &&
+          previous?.longitude == next.longitude) {
+        return;
+      }
+      syncTo(next);
+    },
+  );
+
+  return controller;
 });
 
 class HistoryController extends StateNotifier<HistoryState> {
   final EnvironmentalRepository _repo;
 
-  HistoryController(this._repo) : super(const HistoryState()) {
-    initialize();
+  HistoryController(this._repo) : super(const HistoryState());
+
+  static String stationIdFor(double lat, double lon) =>
+      'METEO-GRID-${lat.toStringAsFixed(2)}-${lon.toStringAsFixed(2)}';
+
+  static String stationNameFor(UserLocationResult location) {
+    if (location.cityName != null && location.cityName!.isNotEmpty) {
+      return '${location.cityName} Regional Model Grid';
+    }
+    return 'Regional Model Grid (${location.coordinateLabel})';
+  }
+
+  /// Points historical analytics at the user's current location.
+  Future<void> useLocation(UserLocationResult location) async {
+    final stationId = stationIdFor(location.latitude, location.longitude);
+    if (stationId == state.selectedStationId && state.summary != null) return;
+
+    state = state.copyWith(
+      selectedStationId: stationId,
+      selectedStationName: stationNameFor(location),
+      isPhysicalStation: false,
+      comparisonStationId: '',
+    );
+
+    await fetchHistoryData();
   }
 
   Future<void> initialize({
@@ -143,11 +189,13 @@ class HistoryController extends StateNotifier<HistoryState> {
   }
 
   void setComparisonStation(String stationB) {
+    if (stationB.isEmpty || stationB == state.selectedStationId) return;
     state = state.copyWith(comparisonStationId: stationB);
     compareLocations(stationB);
   }
 
   Future<void> fetchHistoryData() async {
+    if (state.selectedStationId.isEmpty) return;
     state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {

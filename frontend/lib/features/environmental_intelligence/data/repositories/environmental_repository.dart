@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/network/api_client.dart';
@@ -409,6 +410,41 @@ class EnvironmentalRepository {
     }
   }
 
+  /// Retrieves the interpolated pollution surface for the surrounding area.
+  Future<GeoHeatmapModel?> getGeoHeatmap(
+    double lat,
+    double lon, {
+    String pollutant = 'AQI',
+    double? radiusKm,
+    bool allowDemo = true,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'latitude': lat,
+        'longitude': lon,
+        'pollutant': pollutant,
+        'allow_demo': allowDemo,
+      };
+      if (radiusKm != null) queryParams['radius_km'] = radiusKm;
+
+      final response = await _client.get(
+        ApiConstants.geoHeatmap,
+        queryParameters: {
+          ...queryParams,
+          // Sampling the model across a grid is heavier than a single lookup.
+          'grid_resolution': 10,
+        },
+        options: Options(
+          receiveTimeout: const Duration(seconds: 40),
+          sendTimeout: const Duration(seconds: 40),
+        ),
+      );
+      return GeoHeatmapModel.fromJson(response.data as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Retains legacy direct calculation endpoint
   Future<AssessmentResponse> calculateAssessment(EnvironmentalObservation observation) async {
     try {
@@ -442,27 +478,27 @@ class EnvironmentalRepository {
   List<GeoStationModel> _getFallbackGeoStations(double lat, double lon) {
     return [
       GeoStationModel(
-        stationId: 'DELHI-CPCB-001',
-        stationName: 'Anand Vihar, Delhi',
-        provider: 'CPCB',
+        stationId: 'SIM-STATION-001',
+        stationName: 'Simulated Ground Monitor (Offline Mode)',
+        provider: 'Offline Demo Fixture',
         stationType: StationType.physicalMonitor,
         latitude: lat + 0.03,
         longitude: lon + 0.04,
         distanceKm: 4.8,
         availablePollutants: const ['PM2.5', 'PM10', 'NO2', 'SO2', 'CO', 'O3'],
-        dataSourceType: 'LIVE',
+        dataSourceType: 'DEMO_FIXTURE',
         isOperational: true,
       ),
       GeoStationModel(
-        stationId: 'DELHI-CPCB-002',
-        stationName: 'R K Puram, Delhi',
-        provider: 'CPCB',
+        stationId: 'SIM-STATION-002',
+        stationName: 'Simulated Ground Monitor 2 (Offline Mode)',
+        provider: 'Offline Demo Fixture',
         stationType: StationType.physicalMonitor,
         latitude: lat - 0.04,
         longitude: lon - 0.03,
         distanceKm: 6.2,
         availablePollutants: const ['PM2.5', 'PM10', 'NO2', 'CO'],
-        dataSourceType: 'LIVE',
+        dataSourceType: 'DEMO_FIXTURE',
         isOperational: true,
       ),
       GeoStationModel(
@@ -484,14 +520,14 @@ class EnvironmentalRepository {
     final now = DateTime.now();
     return [
       GeoObservationModel(
-        stationId: 'DELHI-CPCB-001',
-        stationName: 'Anand Vihar, Delhi',
+        stationId: 'SIM-STATION-001',
+        stationName: 'Simulated Ground Monitor (Offline Mode)',
         stationType: StationType.physicalMonitor,
-        provider: 'CPCB',
+        provider: 'Offline Demo Fixture',
         latitude: lat + 0.03,
         longitude: lon + 0.04,
         timestamp: now,
-        dataSourceType: 'LIVE',
+        dataSourceType: 'DEMO_FIXTURE',
         aqi: 320,
         aqiCategory: 'Very Poor',
         prominentPollutant: 'PM2.5',
@@ -504,14 +540,14 @@ class EnvironmentalRepository {
         distanceKm: 4.8,
       ),
       GeoObservationModel(
-        stationId: 'DELHI-CPCB-002',
-        stationName: 'R K Puram, Delhi',
+        stationId: 'SIM-STATION-002',
+        stationName: 'Simulated Ground Monitor 2 (Offline Mode)',
         stationType: StationType.physicalMonitor,
-        provider: 'CPCB',
+        provider: 'Offline Demo Fixture',
         latitude: lat - 0.04,
         longitude: lon - 0.03,
         timestamp: now,
-        dataSourceType: 'LIVE',
+        dataSourceType: 'DEMO_FIXTURE',
         aqi: 285,
         aqiCategory: 'Poor',
         prominentPollutant: 'PM2.5',
@@ -717,8 +753,8 @@ class EnvironmentalRepository {
         'location': {
           'latitude': lat ?? 28.6139,
           'longitude': lon ?? 77.2090,
-          'city': 'Delhi',
-          'country': 'India',
+          'city': 'Offline Demo Fixture',
+          'country': null,
         },
       }),
       riskAssessment: EnvironmentalRiskScore.fromJson({
@@ -943,6 +979,8 @@ class EnvironmentalRepository {
       orElse: () => _getFallbackActivityProfiles()[2],
     );
     final vol = double.parse((act.inhalationRateM3H * durH).toStringAsFixed(2));
+    final reqLat = (request['latitude'] as num?)?.toDouble() ?? 28.6139;
+    final reqLon = (request['longitude'] as num?)?.toDouble() ?? 77.2090;
 
     return ExposureSimulationModel(
       status: 'COMPUTED',
@@ -950,10 +988,11 @@ class EnvironmentalRepository {
       durationMinutes: durMin,
       durationHours: durH,
       totalInhaledVolumeM3: vol,
-      dataSourceType: 'LIVE',
-      locationName: 'Delhi Central (Fallback Mode)',
-      latitude: 28.6139,
-      longitude: 77.2090,
+      dataSourceType: 'DEMO_FIXTURE',
+      locationName: 'Offline Demo Fixture '
+          '(${reqLat.abs().toStringAsFixed(2)}°, ${reqLon.abs().toStringAsFixed(2)}°)',
+      latitude: reqLat,
+      longitude: reqLon,
       pollutants: {
         'PM2.5': PollutantExposureMetricModel(
           pollutant: 'PM2.5',
@@ -1239,6 +1278,8 @@ class EnvironmentalRepository {
             'provider': summary.provider,
             'data_source_type': summary.dataSourceType,
             'is_physical_station': summary.isPhysicalStation,
+            'latitude': summary.latitude,
+            'longitude': summary.longitude,
             'period': summary.period,
             'start_time': summary.startTime.toIso8601String(),
             'end_time': summary.endTime.toIso8601String(),
@@ -1254,21 +1295,28 @@ class EnvironmentalRepository {
             'overall_trend': summary.overallTrend,
             'aqi_category_distribution': summary.aqiCategoryDistribution,
             'pollutant_summaries': summary.pollutantSummaries.map((k, v) => MapEntry(k, v.toJson())),
+            'methodology_notes': summary.methodologyNotes,
             'disclaimer': summary.disclaimer,
           },
           if (trends != null)
             'trends': {
               'station_id': trends.stationId,
+              'station_name': summary.stationName,
               'period': trends.period,
-              'datapoints_count': trends.datapointsCount,
-              'overall_trend': trends.overallTrend,
-              'slope_aqi_per_day': trends.slopeAqiPerDay,
-              'r_squared': trends.rSquared,
-              'is_statistically_significant': trends.isStatisticallySignificant,
-              'diurnal_profile': trends.diurnalProfile.map((k, v) => MapEntry(k.toString(), v)),
-              'pollutant_trends': trends.pollutantTrends.map((k, v) => MapEntry(k, v.toJson())),
-              'detected_gaps': trends.detectedGaps.map((g) => g.toJson()).toList(),
-              'disclaimer': trends.disclaimer,
+              'data_source_type': summary.dataSourceType,
+              'is_physical_station': summary.isPhysicalStation,
+              'trend_direction': trends.overallTrend,
+              'slope_aqi_per_day': trends.slopeAqiPerDay ?? 0.0,
+              'r_squared': trends.rSquared ?? 0.0,
+              'p_value_significant': trends.isStatisticallySignificant,
+              'sample_count': trends.datapointsCount,
+              'aggregation_interval': 'hourly',
+              'time_points': trends.timeseries.map((t) => t.toJson()).toList(),
+              'data_gaps': trends.detectedGaps.map((g) => g.toJson()).toList(),
+              'diurnal_profile': trends.diurnalProfile.map(
+                (k, v) => MapEntry(k.toString(), v),
+              ),
+              'methodology_notes': trends.disclaimer,
             },
         },
       );

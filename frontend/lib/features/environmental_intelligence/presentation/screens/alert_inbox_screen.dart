@@ -29,7 +29,7 @@ class _AlertInboxScreenState extends ConsumerState<AlertInboxScreen> {
     final alertState = ref.watch(alertControllerProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,

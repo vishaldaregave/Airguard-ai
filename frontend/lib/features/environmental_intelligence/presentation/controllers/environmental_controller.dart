@@ -68,10 +68,11 @@ class EnvironmentalState {
     bool? isAILoading,
     String? forecastError,
     String? aiError,
+    bool clearError = false,
   }) {
     return EnvironmentalState(
       isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       userLocation: userLocation ?? this.userLocation,
       nearbyStations: nearbyStations ?? this.nearbyStations,
       selectedStation: selectedStation ?? this.selectedStation,
@@ -123,6 +124,7 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
 
       state = state.copyWith(
         isLoading: false,
+        clearError: true,
         userLocation: locationResult,
         nearbyStations: stations,
         selectedStation: activeStation,
@@ -154,6 +156,7 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
 
       state = state.copyWith(
         isLoading: false,
+        clearError: true,
         selectedStation: station,
         currentAssessment: assessment,
       );
@@ -180,7 +183,8 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
       final loc = UserLocationResult(
         latitude: lat,
         longitude: lon,
-        isGpsLive: true,
+        isGpsLive: false,
+        isUserSelected: true,
         statusMessage: 'Location set to ${cityName ?? "custom coordinates"}',
         cityName: cityName,
         stateName: stateName,
@@ -193,6 +197,7 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
 
       state = state.copyWith(
         isLoading: false,
+        clearError: true,
         userLocation: loc,
         nearbyStations: stations,
         selectedStation: activeStation,
@@ -225,6 +230,7 @@ class EnvironmentalController extends StateNotifier<EnvironmentalState> {
 
       state = state.copyWith(
         isLoading: false,
+        clearError: true,
         userLocation: locationResult,
         nearbyStations: stations,
         selectedStation: activeStation,

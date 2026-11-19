@@ -205,3 +205,41 @@ class GeoCoverageResponse(BaseModel):
     )
     message: str = Field(..., description="Descriptive status of geographic coverage")
     timestamp: datetime = Field(..., description="Assessment timestamp in UTC")
+
+
+class HeatmapCell(BaseModel):
+    latitude: float = Field(..., description="Cell centroid latitude")
+    longitude: float = Field(..., description="Cell centroid longitude")
+    value: float = Field(..., ge=0.0, description="Interpolated pollutant concentration or AQI")
+    confidence: float = Field(
+        1.0,
+        ge=0.0,
+        le=1.0,
+        description="Estimate reliability for this cell (decays with distance from the nearest station)",
+    )
+
+
+class GeoHeatmapResponse(BaseModel):
+    center_location: LocationCoordinate = Field(..., description="Query center coordinate")
+    pollutant: str = Field(..., description="Pollutant/AQI metric rendered on the heatmap")
+    unit: str = Field(..., description="Measurement unit for the returned values")
+    search_radius_km: float = Field(..., ge=0.0, description="Search radius covered by the grid")
+    grid_resolution: int = Field(..., ge=2, description="Number of cells per grid edge")
+    cells: List[HeatmapCell] = Field(
+        default_factory=list, description="Interpolated grid cells, sparse when coverage is limited"
+    )
+    min_value: Optional[float] = Field(None, ge=0.0, description="Minimum interpolated value")
+    max_value: Optional[float] = Field(None, ge=0.0, description="Maximum interpolated value")
+    contributing_station_count: int = Field(..., ge=0, description="Stations used for interpolation")
+    data_source_type: DataSourceType = Field(
+        DataSourceType.ESTIMATED, description="Heatmap values are always ESTIMATED"
+    )
+    method: str = Field(
+        "INVERSE_DISTANCE_WEIGHTING", description="Spatial interpolation algorithm"
+    )
+    disclaimer: str = Field(
+        "Heatmap surfaces are interpolated estimates derived from monitoring stations, "
+        "not continuous measurements. Regions far from stations carry higher uncertainty.",
+        description="Mandatory scientific disclaimer",
+    )
+    timestamp: datetime = Field(..., description="Heatmap generation timestamp in UTC")

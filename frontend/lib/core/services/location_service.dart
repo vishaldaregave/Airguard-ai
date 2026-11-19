@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../constants/api_constants.dart';
@@ -34,6 +35,7 @@ class UserLocationResult {
   final String? cityName;
   final String? stateName;
   final String? countryName;
+  final bool isUserSelected;
 
   UserLocationResult({
     required this.latitude,
@@ -43,16 +45,29 @@ class UserLocationResult {
     this.cityName,
     this.stateName,
     this.countryName,
+    this.isUserSelected = false,
   });
+
+  bool get isApproximate => !isGpsLive && !isUserSelected;
 
   String get displayLocation {
     if (cityName != null && cityName!.isNotEmpty) {
       if (stateName != null && stateName!.isNotEmpty) {
         return '$cityName, $stateName';
       }
-      return '$cityName, ${countryName ?? "India"}';
+      if (countryName != null && countryName!.isNotEmpty) {
+        return '$cityName, $countryName';
+      }
+      return cityName!;
     }
-    return '${latitude.toStringAsFixed(2)}°N, ${longitude.toStringAsFixed(2)}°E';
+    return coordinateLabel;
+  }
+
+  String get coordinateLabel {
+    final latDir = latitude >= 0 ? 'N' : 'S';
+    final lonDir = longitude >= 0 ? 'E' : 'W';
+    return '${latitude.abs().toStringAsFixed(2)}°$latDir, '
+        '${longitude.abs().toStringAsFixed(2)}°$lonDir';
   }
 }
 
@@ -86,98 +101,183 @@ class LocationService {
     CitySearchResult(name: 'London', state: 'England', country: 'UK', latitude: 51.5074, longitude: -0.1278),
   ];
 
-  /// Determines position using backend IP detection and GPS
+  /// Resolves the user's current position.
+  ///
+  /// Order of preference:
+  /// 1. Device GPS (true "current location" — required for accurate readings).
+  /// 2. Client-side network IP lookup (approximate, city-level).
+  /// 3. Backend network IP lookup (approximate, city-level).
+  ///
+  /// If every source fails we return the regional default but deliberately
+  /// leave the city unset so the UI never presents a guess as the user's city.
   Future<UserLocationResult> determinePosition() async {
-    // 1. Try our high-accuracy backend network IP detection first
-    try {
-      final backendUrl = '${ApiConstants.fallbackLocalUrl}${ApiConstants.locationDetectIp}';
-      final res = await _dio.get(backendUrl);
-      if (res.statusCode == 200 && res.data != null) {
-        final data = res.data;
-        final lat = (data['latitude'] as num).toDouble();
-        final lon = (data['longitude'] as num).toDouble();
-        final city = data['city'] as String?;
-        final state = data['state'] as String?;
-        final country = data['country'] as String?;
+    final gpsResult = await _tryDeviceGps();
+    if (gpsResult != null) return gpsResult;
 
-        return UserLocationResult(
-          latitude: lat,
-          longitude: lon,
-          isGpsLive: true,
-          statusMessage: 'Location resolved via network: $city, $state',
-          cityName: city ?? 'Pune',
-          stateName: state ?? 'Maharashtra',
-          countryName: country ?? 'India',
-        );
-      }
-    } catch (_) {
-      // Backend IP detection didn't respond or timed out, try GPS
-    }
+    final clientNetwork = await _tryClientNetworkLocation();
+    if (clientNetwork != null) return clientNetwork;
 
-    // 2. Try hardware/browser GPS
-    try {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
+    final backendNetwork = await _tryBackendNetworkLocation();
+    if (backendNetwork != null) return backendNetwork;
 
-      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-        final position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium,
-            timeLimit: Duration(seconds: 4),
-          ),
-        );
-
-        final cityData = await _reverseGeocode(position.latitude, position.longitude);
-
-        return UserLocationResult(
-          latitude: position.latitude,
-          longitude: position.longitude,
-          isGpsLive: true,
-          statusMessage: 'Live GPS location retrieved.',
-          cityName: cityData['city'] ?? 'Current Location',
-          stateName: cityData['state'],
-          countryName: cityData['country'],
-        );
-      }
-    } catch (_) {
-      // GPS unavailable
-    }
-
-    // 3. Direct freeipapi fallback
-    try {
-      final ipRes = await _dio.get('https://freeipapi.com/api/json');
-      if (ipRes.statusCode == 200 && ipRes.data != null) {
-        final data = ipRes.data;
-        final lat = (data['latitude'] as num).toDouble();
-        final lon = (data['longitude'] as num).toDouble();
-        final city = data['cityName'] as String?;
-        final state = data['regionName'] as String?;
-        final country = data['countryName'] as String?;
-
-        return UserLocationResult(
-          latitude: lat,
-          longitude: lon,
-          isGpsLive: true,
-          statusMessage: 'Location resolved via network ($city, $state).',
-          cityName: city ?? 'Pune',
-          stateName: state ?? 'Maharashtra',
-          countryName: country ?? 'India',
-        );
-      }
-    } catch (_) {}
-
-    // 4. Default fallback: Pune
     return UserLocationResult(
       latitude: defaultLatitude,
       longitude: defaultLongitude,
       isGpsLive: false,
-      statusMessage: 'Defaulting to Pune regional location.',
-      cityName: 'Pune',
-      stateName: 'Maharashtra',
-      countryName: 'India',
+      statusMessage:
+          'Location could not be detected. Showing an approximate regional default — tap the location pill to choose your city.',
     );
+  }
+
+  bool get _hardwareGpsSupported {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  Future<UserLocationResult?> _tryDeviceGps() async {
+    if (!_hardwareGpsSupported) return null;
+
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        return null;
+      }
+
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 12),
+          ),
+        );
+      } catch (_) {
+        position = await Geolocator.getLastKnownPosition();
+      }
+      if (position == null) return null;
+
+      final cityData =
+          await _reverseGeocode(position.latitude, position.longitude);
+
+      return UserLocationResult(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        isGpsLive: true,
+        statusMessage: 'Precise device GPS location acquired.',
+        cityName: cityData['city'],
+        stateName: cityData['state'],
+        countryName: cityData['country'],
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<UserLocationResult?> _tryClientNetworkLocation() async {
+    // ipapi.co serves HTTPS with CORS enabled, so it works in browsers too.
+    try {
+      final res = await _dio.get('https://ipapi.co/json/');
+      if (res.statusCode == 200 && res.data is Map) {
+        final data = res.data as Map;
+        final lat = _asDouble(data['latitude']);
+        final lon = _asDouble(data['longitude']);
+        if (_isValidCoordinate(lat, lon)) {
+          return UserLocationResult(
+            latitude: lat!,
+            longitude: lon!,
+            isGpsLive: false,
+            statusMessage:
+                'Approximate city location resolved from your network address.',
+            cityName: _asString(data['city']),
+            stateName: _asString(data['region']),
+            countryName: _asString(data['country_name']),
+          );
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final res = await _dio.get('https://freeipapi.com/api/json');
+      if (res.statusCode == 200 && res.data is Map) {
+        final data = res.data as Map;
+        final lat = _asDouble(data['latitude']);
+        final lon = _asDouble(data['longitude']);
+        if (_isValidCoordinate(lat, lon)) {
+          return UserLocationResult(
+            latitude: lat!,
+            longitude: lon!,
+            isGpsLive: false,
+            statusMessage:
+                'Approximate city location resolved from your network address.',
+            cityName: _asString(data['cityName']),
+            stateName: _asString(data['regionName']),
+            countryName: _asString(data['countryName']),
+          );
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  Future<UserLocationResult?> _tryBackendNetworkLocation() async {
+    final urls = <String>{
+      '${ApiConstants.resolvedBaseUrl}${ApiConstants.locationDetectIp}',
+      '${ApiConstants.fallbackLocalUrl}${ApiConstants.locationDetectIp}',
+      '${ApiConstants.defaultBaseUrl}${ApiConstants.locationDetectIp}',
+    };
+
+    for (final url in urls) {
+      try {
+        final res = await _dio.get(url);
+        if (res.statusCode != 200 || res.data is! Map) continue;
+
+        final data = res.data as Map;
+        final lat = _asDouble(data['latitude']);
+        final lon = _asDouble(data['longitude']);
+        if (!_isValidCoordinate(lat, lon)) continue;
+
+        final status = _asString(data['status']);
+        if (status == 'fallback') continue;
+
+        return UserLocationResult(
+          latitude: lat!,
+          longitude: lon!,
+          isGpsLive: false,
+          statusMessage:
+              'Approximate city location resolved from your network address.',
+          cityName: _asString(data['city']),
+          stateName: _asString(data['state']),
+          countryName: _asString(data['country']),
+        );
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  String? _asString(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text == 'null') return null;
+    return text;
+  }
+
+  bool _isValidCoordinate(double? lat, double? lon) {
+    if (lat == null || lon == null) return false;
+    if (lat.isNaN || lon.isNaN) return false;
+    if (lat < -90 || lat > 90) return false;
+    if (lon < -180 || lon > 180) return false;
+    return lat != 0 && lon != 0;
   }
 
   /// Searches for cities globally using Open-Meteo's free geocoding service

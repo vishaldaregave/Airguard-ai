@@ -2,13 +2,39 @@
 AirGuard AI - Location Intelligence Endpoints
 """
 from typing import Optional
+import ipaddress
 import httpx
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.schemas.provider import LocationNearbyResponse
 from app.services.environmental_service import environmental_service
 
 router = APIRouter()
+
+DEFAULT_LATITUDE = 18.5204
+DEFAULT_LONGITUDE = 73.8567
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """Returns the caller's public IP when it can be determined."""
+    forwarded = request.headers.get("x-forwarded-for")
+    candidate = None
+    if forwarded:
+        candidate = forwarded.split(",")[0].strip()
+    elif request.client is not None:
+        candidate = request.client.host
+
+    if not candidate:
+        return None
+
+    try:
+        address = ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+
+    if address.is_private or address.is_loopback or address.is_reserved:
+        return None
+    return str(address)
 
 
 @router.get(
@@ -39,49 +65,58 @@ async def get_nearby_locations(
     summary="Detect Client Location via Network IP",
     description="Resolves client approximate geographic coordinates and city name using IP intelligence without requiring hardware GPS.",
 )
-async def detect_ip_location():
+async def detect_ip_location(request: Request):
+    client_ip = _client_ip(request)
+    ipapi_path = f"https://ipapi.co/{client_ip}/json/" if client_ip else "https://ipapi.co/json/"
+
+    # Primary: HTTPS provider that can resolve the caller's own address.
     try:
         async with httpx.AsyncClient(timeout=4.0) as client:
-            resp = await client.get("http://ip-api.com/json")
+            resp = await client.get(ipapi_path)
+            if resp.status_code == 200:
+                data = resp.json()
+                latitude = data.get("latitude")
+                longitude = data.get("longitude")
+                if latitude is not None and longitude is not None:
+                    return {
+                        "status": "success",
+                        "latitude": float(latitude),
+                        "longitude": float(longitude),
+                        "city": data.get("city"),
+                        "state": data.get("region"),
+                        "country": data.get("country_name"),
+                        "countryCode": data.get("country_code"),
+                    }
+    except Exception:
+        pass
+
+    # Secondary provider.
+    try:
+        lookup = client_ip or ""
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            resp = await client.get(f"http://ip-api.com/json/{lookup}")
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("status") == "success":
                     return {
                         "status": "success",
-                        "latitude": float(data.get("lat", 18.5204)),
-                        "longitude": float(data.get("lon", 73.8567)),
-                        "city": data.get("city", "Pune"),
-                        "state": data.get("regionName", "Maharashtra"),
-                        "country": data.get("country", "India"),
-                        "countryCode": data.get("countryCode", "IN"),
+                        "latitude": float(data.get("lat")),
+                        "longitude": float(data.get("lon")),
+                        "city": data.get("city"),
+                        "state": data.get("regionName"),
+                        "country": data.get("country"),
+                        "countryCode": data.get("countryCode"),
                     }
     except Exception:
         pass
 
-    # Secondary fallback
-    try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
-            resp = await client.get("https://ipapi.co/json/")
-            if resp.status_code == 200:
-                data = resp.json()
-                return {
-                    "status": "success",
-                    "latitude": float(data.get("latitude", 18.5204)),
-                    "longitude": float(data.get("longitude", 73.8567)),
-                    "city": data.get("city", "Pune"),
-                    "state": data.get("region", "Maharashtra"),
-                    "country": data.get("country_name", "India"),
-                    "countryCode": data.get("country_code", "IN"),
-                }
-    except Exception:
-        pass
-
+    # Do not present a guessed city as the client's location.
     return {
         "status": "fallback",
-        "latitude": 18.5204,
-        "longitude": 73.8567,
-        "city": "Pune",
-        "state": "Maharashtra",
-        "country": "India",
-        "countryCode": "IN",
+        "latitude": DEFAULT_LATITUDE,
+        "longitude": DEFAULT_LONGITUDE,
+        "city": None,
+        "state": None,
+        "country": None,
+        "countryCode": None,
     }

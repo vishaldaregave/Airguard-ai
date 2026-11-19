@@ -1,8 +1,21 @@
+import 'package:flutter/foundation.dart';
+
 class ApiConstants {
-  // Configurable base URL (defaults to localhost for development/emulator)
-  // For Android emulator: 10.0.2.2:8000, for local desktop / web / device: localhost:8000
+  // Host loopback as seen from inside the Android emulator.
   static const String defaultBaseUrl = 'http://10.0.2.2:8000';
   static const String fallbackLocalUrl = 'http://127.0.0.1:8000';
+
+  /// Backend origin that can actually reach a host-run API server.
+  ///
+  /// The Android emulator maps the host machine to `10.0.2.2`, so `127.0.0.1`
+  /// would resolve to the emulator itself. Browsers and desktop builds run on
+  /// the host and use loopback directly.
+  static String get resolvedBaseUrl {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return defaultBaseUrl;
+    }
+    return fallbackLocalUrl;
+  }
 
   // Milestone 1 endpoints
   static const String aqiCalculate = '/api/v1/aqi/calculate';
@@ -36,6 +49,7 @@ class ApiConstants {
   static const String geoObservations = '/api/v1/geo/observations';
   static const String geoInterpolation = '/api/v1/geo/interpolation';
   static const String geoHotspots = '/api/v1/geo/hotspots';
+  static const String geoHeatmap = '/api/v1/geo/heatmap';
   static const String geoCoverage = '/api/v1/geo/coverage';
 
   // Milestone 5.2 Exposure Simulator endpoints

@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/services/location_service.dart';
 import '../../data/repositories/environmental_repository.dart';
 import '../../domain/models/exposure_models.dart';
+import 'environmental_controller.dart';
 
 class ExposureState {
   final List<ActivityProfileModel> activityProfiles;
@@ -89,42 +91,83 @@ class ExposureState {
 final exposureControllerProvider =
     StateNotifierProvider<ExposureController, ExposureState>((ref) {
   final repo = ref.watch(environmentalRepositoryProvider);
-  return ExposureController(repo);
+  final controller = ExposureController(repo);
+
+  void syncTo(UserLocationResult? location) {
+    if (location == null) return;
+    controller.updateLocation(
+      location.latitude,
+      location.longitude,
+      locationName: location.displayLocation,
+    );
+  }
+
+  syncTo(ref.read(environmentalControllerProvider).userLocation);
+
+  ref.listen<UserLocationResult?>(
+    environmentalControllerProvider.select((s) => s.userLocation),
+    (previous, next) {
+      if (next == null) return;
+      if (previous?.latitude == next.latitude &&
+          previous?.longitude == next.longitude) {
+        return;
+      }
+      syncTo(next);
+    },
+  );
+
+  return controller;
 });
 
 class ExposureController extends StateNotifier<ExposureState> {
   final EnvironmentalRepository _repo;
 
   ExposureController(this._repo) : super(const ExposureState()) {
-    initialize();
+    _loadActivityProfiles();
   }
 
-  Future<void> initialize({
-    double? lat,
-    double? lon,
+  /// Aligns the simulator with the user's resolved location.
+  Future<void> updateLocation(
+    double lat,
+    double lon, {
     String? stationId,
-    String? stationName,
+    String? locationName,
   }) async {
+    final moved = state.latitude == null ||
+        state.longitude == null ||
+        (state.latitude! - lat).abs() > 0.000001 ||
+        (state.longitude! - lon).abs() > 0.000001;
+
     state = state.copyWith(
-      isLoading: true,
-      latitude: lat ?? 28.6139,
-      longitude: lon ?? 77.2090,
+      latitude: lat,
+      longitude: lon,
       stationId: stationId,
-      locationName: stationName ?? 'Delhi Central',
+      locationName: locationName,
     );
+
+    if (moved && state.activityProfiles.isNotEmpty) {
+      await runSimulation();
+    }
+  }
+
+  Future<void> _loadActivityProfiles() async {
+    if (state.activityProfiles.isNotEmpty) return;
+    state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {
       final profiles = await _repo.getActivityProfiles();
       final defaultAct = profiles.firstWhere(
         (p) => p.activityType == ActivityTypeEnum.walking,
-        orElse: () => profiles.isNotEmpty ? profiles.first : const ActivityProfileModel(
-          activityType: ActivityTypeEnum.walking,
-          displayName: 'Walking',
-          inhalationRateM3H: 1.20,
-          metEquivalent: 3.0,
-          description: 'Standard walking',
-          reference: 'EPA EFH',
-        ),
+        orElse: () => profiles.isNotEmpty
+            ? profiles.first
+            : const ActivityProfileModel(
+                activityType: ActivityTypeEnum.walking,
+                displayName: 'Walking',
+                inhalationRateM3H: 1.20,
+                metEquivalent: 3.0,
+                description: 'Standard walking',
+                reference: 'EPA EFH',
+              ),
       );
       final defaultScenB = profiles.firstWhere(
         (p) => p.activityType == ActivityTypeEnum.running,
@@ -138,13 +181,31 @@ class ExposureController extends StateNotifier<ExposureState> {
         isLoading: false,
       );
 
-      // Run initial simulation
-      await runSimulation();
+      if (state.latitude != null && state.longitude != null) {
+        await runSimulation();
+      }
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Failed to load activity profiles: $e',
       );
+    }
+  }
+
+  Future<void> initialize({
+    double? lat,
+    double? lon,
+    String? stationId,
+    String? stationName,
+  }) async {
+    if (lat != null && lon != null) {
+      await updateLocation(lat, lon, stationId: stationId, locationName: stationName);
+    }
+    await _loadActivityProfiles();
+    if (state.currentSimulation == null &&
+        state.latitude != null &&
+        state.longitude != null) {
+      await runSimulation();
     }
   }
 

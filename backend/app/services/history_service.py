@@ -9,6 +9,8 @@ import math
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+import re
+
 from app.db.models import MonitoringStation, StationObservation
 from app.schemas.pollutant import DataSourceType, EnvironmentalObservationInput
 from app.schemas.aqi import AQICalculationResult
@@ -53,6 +55,34 @@ from app.engine.historical_analytics_engine import (
 
 
 class HistoryService:
+    GRID_CODE_PATTERN = re.compile(r"^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$")
+
+    def _parse_grid_coordinates(
+        self,
+        station_code: str,
+    ) -> Tuple[float, float]:
+        """
+        Extracts latitude/longitude from model-grid station codes such as
+        ``METEO-GRID-18.52-73.86`` (or ``METEO-GRID-18.52--73.86`` for the
+        western hemisphere). Falls back to the Delhi reference cell when the
+        code does not encode coordinates.
+        """
+        suffix = station_code
+        for prefix in ("METEO-GRID-", "GRID-"):
+            if suffix.startswith(prefix):
+                suffix = suffix[len(prefix):]
+                break
+
+        match = self.GRID_CODE_PATTERN.match(suffix)
+        if not match:
+            return 28.6139, 77.2090
+
+        lat = float(match.group(1))
+        lon = float(match.group(2))
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+            return 28.6139, 77.2090
+        return lat, lon
+
     def record_observation(
         self,
         db: Session,
@@ -226,20 +256,27 @@ class HistoryService:
     ) -> int:
         hours = min(hours, 72)
         """
-        Seeds verified regional historical observations if database has insufficient records for model grid.
-        Models typical diurnal cycle of Delhi / NCR (morning rush hour inversion, afternoon convective dispersion,
-        and nighttime cooling particulate accumulation).
+        Seeds a regional model-approximation archive if the database has insufficient
+        records for the requested model-grid cell. The station coordinates are parsed
+        from the station code so analytics always describe the requested location rather
+        than a fixed reference city.
         """
         station = db.query(MonitoringStation).filter(MonitoringStation.station_code == station_code).first()
         if not station:
+            lat, lon = self._parse_grid_coordinates(station_code)
+            lat_hemi = "N" if lat >= 0 else "S"
+            lon_hemi = "E" if lon >= 0 else "W"
             station = MonitoringStation(
                 station_code=station_code,
-                name="Open-Meteo Regional Model Grid (28.61°N, 77.21°E)",
-                city="Delhi",
-                state="Delhi NCR",
-                country="India",
-                latitude=28.6139,
-                longitude=77.2090,
+                name=(
+                    f"Regional Model Grid "
+                    f"({abs(lat):.2f}\u00b0{lat_hemi}, {abs(lon):.2f}\u00b0{lon_hemi})"
+                ),
+                city="Regional Model Grid",
+                state="Model Approximation",
+                country="Global",
+                latitude=lat,
+                longitude=lon,
                 provider="Open-Meteo Air Quality (Atmospheric Model)",
                 data_source_type="HISTORICAL",
                 is_active=True,

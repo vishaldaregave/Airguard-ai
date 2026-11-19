@@ -3,12 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/models/history_analytics_models.dart';
+import '../controllers/environmental_controller.dart';
 import '../controllers/history_controller.dart';
 
 class HistoricalIntelligenceScreen extends ConsumerStatefulWidget {
-  const HistoricalIntelligenceScreen({super.key});
+  final bool embedded;
+
+  const HistoricalIntelligenceScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<HistoricalIntelligenceScreen> createState() =>
@@ -37,8 +41,78 @@ class _HistoricalIntelligenceScreenState
     final state = ref.watch(historyControllerProvider);
     final controller = ref.read(historyControllerProvider.notifier);
 
+    final body = SafeArea(
+      child: Column(
+        children: [
+          // Sticky top control panel: Station selector & Period selector
+          _buildStationAndPeriodHeader(context, state, controller),
+
+          // Main Tab View
+          Expanded(
+            child: state.isLoading && state.summary == null
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                              AppColors.cyanAccent),
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'Loading environmental archive...',
+                          style: TextStyle(
+                              color: AppColors.textSecondary, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  )
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildOverviewTab(context, state, controller),
+                      _buildPollutantsTab(context, state),
+                      _buildCalendarTab(context, state),
+                      _buildExtremesAndGapsTab(context, state),
+                      _buildComparisonTab(context, state, controller),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Material(
+            color: AppColors.surface,
+            child: Row(
+              children: [
+                Expanded(child: _buildTabBar()),
+                IconButton(
+                  onPressed: () => _showReportDialog(context, ref),
+                  icon: const Icon(Icons.picture_as_pdf_outlined,
+                      size: 19, color: AppColors.cyanAccent),
+                  tooltip: 'Export historical report',
+                ),
+                IconButton(
+                  onPressed: () => controller.fetchHistoryData(),
+                  icon: const Icon(Icons.refresh,
+                      size: 19, color: AppColors.textSecondary),
+                  tooltip: 'Refresh history',
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      );
+    }
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
@@ -46,21 +120,21 @@ class _HistoricalIntelligenceScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'HISTORICAL INTELLIGENCE',
+              'Historical Intelligence',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 16,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
                 color: AppColors.textPrimary,
               ),
             ),
             Text(
-              'EVIDENCE-DRIVEN ENVIRONMENTAL ANALYTICS',
-              style: TextStyle(
+              state.selectedStationName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
                 fontSize: 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.8,
-                color: AppColors.cyanAccent.withValues(alpha: 0.9),
+                fontWeight: FontWeight.w600,
+                color: AppColors.cyanAccent,
               ),
             ),
           ],
@@ -68,7 +142,8 @@ class _HistoricalIntelligenceScreenState
         actions: [
           IconButton(
             onPressed: () => _showReportDialog(context, ref),
-            icon: const Icon(Icons.picture_as_pdf_outlined, color: AppColors.cyanAccent),
+            icon: const Icon(Icons.picture_as_pdf_outlined,
+                color: AppColors.cyanAccent),
             tooltip: 'Export Historical Environmental Report',
           ),
           IconButton(
@@ -78,65 +153,31 @@ class _HistoricalIntelligenceScreenState
           ),
           const SizedBox(width: 4),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          indicatorColor: AppColors.cyanAccent,
-          indicatorWeight: 3,
-          labelColor: AppColors.cyanAccent,
-          unselectedLabelColor: AppColors.textSecondary,
-          labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-          tabs: const [
-            Tab(text: 'OVERVIEW & TRENDS'),
-            Tab(text: 'POLLUTANTS'),
-            Tab(text: 'CALENDAR'),
-            Tab(text: 'EXTREMES & GAPS'),
-            Tab(text: 'COMPARISON'),
-          ],
-        ),
+        bottom: _buildTabBar(),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Sticky top control panel: Station selector & Period selector
-            _buildStationAndPeriodHeader(context, state, controller),
+      body: body,
+    );
+  }
 
-            // Main Tab View
-            Expanded(
-              child: state.isLoading && state.summary == null
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(AppColors.cyanAccent),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'Loading verified historical archive...',
-                            style: TextStyle(
-                                color: AppColors.textSecondary, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    )
-                  : TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildOverviewTab(context, state, controller),
-                        _buildPollutantsTab(context, state),
-                        _buildCalendarTab(context, state),
-                        _buildExtremesAndGapsTab(context, state),
-                        _buildComparisonTab(context, state, controller),
-                      ],
-                    ),
-            ),
-          ],
-        ),
-      ),
+  TabBar _buildTabBar() {
+    return TabBar(
+      controller: _tabController,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      indicatorColor: AppColors.cyanAccent,
+      indicatorWeight: 3,
+      labelColor: AppColors.cyanAccent,
+      unselectedLabelColor: AppColors.textSecondary,
+      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      unselectedLabelStyle:
+          const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      tabs: const [
+        Tab(text: 'OVERVIEW & TRENDS'),
+        Tab(text: 'POLLUTANTS'),
+        Tab(text: 'CALENDAR'),
+        Tab(text: 'EXTREMES & GAPS'),
+        Tab(text: 'COMPARISON'),
+      ],
     );
   }
 
@@ -232,49 +273,14 @@ class _HistoricalIntelligenceScreenState
                 ),
               ),
 
-              // Station Quick Switch Popup
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.swap_horiz, color: AppColors.cyanAccent),
-                tooltip: 'Switch Monitoring Station',
-                color: AppColors.surfaceElevated,
-                onSelected: (val) {
-                  if (val == 'METEO-GRID-28.61-77.21') {
-                    controller.setStation(
-                      stationId: 'METEO-GRID-28.61-77.21',
-                      stationName: 'Open-Meteo Regional Model Grid (Delhi)',
-                      isPhysical: false,
-                    );
-                  } else if (val == 'DELHI-CPCB-001') {
-                    controller.setStation(
-                      stationId: 'DELHI-CPCB-001',
-                      stationName: 'Anand Vihar, Delhi (CPCB)',
-                      isPhysical: true,
-                    );
-                  } else if (val == 'DELHI-CPCB-002') {
-                    controller.setStation(
-                      stationId: 'DELHI-CPCB-002',
-                      stationName: 'RK Puram, Delhi (CPCB)',
-                      isPhysical: true,
-                    );
-                  }
-                },
-                itemBuilder: (ctx) => [
-                  const PopupMenuItem(
-                    value: 'METEO-GRID-28.61-77.21',
-                    child: Text('Model Grid: Delhi NCR (28.61, 77.21)',
-                        style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
-                  ),
-                  const PopupMenuItem(
-                    value: 'DELHI-CPCB-001',
-                    child: Text('Ground Sensor: Anand Vihar (CPCB)',
-                        style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
-                  ),
-                  const PopupMenuItem(
-                    value: 'DELHI-CPCB-002',
-                    child: Text('Ground Sensor: RK Puram (CPCB)',
-                        style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
-                  ),
-                ],
+              // Recenter analytics on the user's current location
+              IconButton(
+                icon: const Icon(Icons.my_location,
+                    color: AppColors.cyanAccent),
+                tooltip: 'Use my current location',
+                onPressed: () => ref
+                    .read(environmentalControllerProvider.notifier)
+                    .locateMe(),
               ),
             ],
           ),
@@ -1600,28 +1606,44 @@ class _HistoricalIntelligenceScreenState
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Selected: ${state.comparisonStationId}',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.cyanAccent),
+                Text(
+                  state.comparisonStationId.isEmpty
+                      ? 'Pick a reference city to compare against your current location.'
+                      : 'Comparing with: ${state.comparisonStationId}',
+                  style: const TextStyle(
+                      fontSize: 11.5, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: LocationService.popularCities.map((city) {
+                    final id = HistoryController.stationIdFor(
+                        city.latitude, city.longitude);
+                    final isSelected = state.comparisonStationId == id;
+                    return ChoiceChip(
+                      label: Text(city.name),
+                      selected: isSelected,
+                      onSelected: (_) =>
+                          controller.setComparisonStation(id),
+                      selectedColor:
+                          AppColors.cyanAccent.withValues(alpha: 0.22),
+                      backgroundColor: AppColors.surfaceElevated,
+                      labelStyle: TextStyle(
+                        fontSize: 11,
+                        fontWeight:
+                            isSelected ? FontWeight.w800 : FontWeight.w600,
+                        color: isSelected
+                            ? AppColors.cyanAccent
+                            : AppColors.textSecondary,
                       ),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.surfaceElevated,
-                        foregroundColor: AppColors.cyanAccent,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                      side: BorderSide(
+                        color: isSelected
+                            ? AppColors.cyanAccent
+                            : AppColors.border,
                       ),
-                      onPressed: () => controller
-                          .setComparisonStation('DELHI-CPCB-001'),
-                      child: const Text('Compare Anand Vihar',
-                          style: TextStyle(fontSize: 10)),
-                    ),
-                  ],
+                    );
+                  }).toList(),
                 ),
               ],
             ),

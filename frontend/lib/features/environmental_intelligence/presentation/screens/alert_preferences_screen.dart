@@ -70,7 +70,7 @@ class _AlertPreferencesScreenState extends ConsumerState<AlertPreferencesScreen>
     final envState = ref.watch(environmentalControllerProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,

@@ -4,6 +4,7 @@ Unifies station discovery, geographic observations, IDW spatial interpolation,
 pollution hotspot detection, and spatial coverage assessment.
 """
 from datetime import datetime, timezone
+import logging
 import math
 from typing import Dict, List, Optional, Tuple
 
@@ -11,9 +12,11 @@ from app.core.config import settings
 from app.schemas.pollutant import DataSourceType, LocationCoordinate
 from app.schemas.geo import (
     GeoCoverageResponse,
+    GeoHeatmapResponse,
     GeoHotspotsResponse,
     GeoObservationItem,
     GeoStationItem,
+    HeatmapCell,
     SpatialInterpolationResponse,
     StationType,
 )
@@ -22,6 +25,9 @@ from app.services.geo import haversine_distance_km
 from app.engine.spatial_interpolator import spatial_interpolator
 from app.services.hotspot_service import hotspot_service
 from app.services.cache import cache
+
+
+logger = logging.getLogger(__name__)
 
 
 class GeoIntelligenceService:
@@ -111,11 +117,13 @@ class GeoIntelligenceService:
 
         for st in stations:
             try:
-                current_air = await self.env_service.get_current_air(
+                current_air = await self.env_service.get_current_air_quality(
                     station_id=st.station_id,
                     latitude=st.location.latitude,
                     longitude=st.location.longitude,
                 )
+                if current_air is None:
+                    continue
                 obs_in = current_air.observation
                 aqi_res = current_air.aqi_result
 
@@ -145,13 +153,21 @@ class GeoIntelligenceService:
                     temperature_celsius=obs_in.temperature_celsius,
                     relative_humidity_pct=obs_in.relative_humidity_pct,
                     wind_speed_kmh=obs_in.wind_speed_kmh,
-                    data_freshness_minutes=current_air.data_freshness_minutes,
+                    data_freshness_minutes=(
+                        max(0.0, current_air.data_freshness_minutes)
+                        if current_air.data_freshness_minutes is not None
+                        else None
+                    ),
                     is_stale=current_air.is_stale,
                     distance_km=st.distance_km,
                 )
                 observations.append(geo_obs)
-            except Exception:
-                # If individual station observation fails, omit gracefully without aborting entire spatial query
+            except Exception as exc:
+                logger.warning(
+                    "Geo observation failed for station %s: %s",
+                    st.station_id,
+                    exc,
+                )
                 continue
 
         await cache.set(cache_key, observations, ttl_seconds=settings.CACHE_OBSERVATIONS_TTL_SECONDS)
@@ -184,6 +200,149 @@ class GeoIntelligenceService:
             search_radius_km=radius,
             min_stations=min_stations,
         )
+
+    async def get_heatmap(
+        self,
+        latitude: float,
+        longitude: float,
+        pollutant: str = "AQI",
+        radius_km: Optional[float] = None,
+        grid_resolution: int = 14,
+        allow_demo: bool = True,
+    ) -> GeoHeatmapResponse:
+        """
+        Builds a per-location pollutant surface over the search area.
+
+        The atmospheric model is sampled directly at every grid coordinate, so
+        each cell carries its own reading. This is deliberately not IDW over the
+        handful of nearby ground stations: with one or two stations that
+        approach collapses into a single uniform colour, which misrepresents a
+        field that actually varies across space.
+        """
+        radius = radius_km or settings.DEFAULT_SEARCH_RADIUS_KM
+        radius = min(radius, settings.MAX_SEARCH_RADIUS_KM)
+        resolution = max(2, min(grid_resolution, 24))
+        metric = (pollutant or "AQI").upper()
+
+        metric_config = {
+            "AQI": ("CPCB AQI", "index"),
+            "PM2.5": ("PM2.5", "µg/m³"),
+            "PM10": ("PM10", "µg/m³"),
+            "NO2": ("NO2", "µg/m³"),
+            "SO2": ("SO2", "µg/m³"),
+            "CO": ("CO", "mg/m³"),
+            "O3": ("O3", "µg/m³"),
+        }
+        metric_label, unit = metric_config.get(metric, metric_config["AQI"])
+
+        cache_key = (
+            f"geo:heatmap:{latitude:.3f}:{longitude:.3f}:{radius:.1f}:"
+            f"{metric}:{resolution}"
+        )
+        cached = await cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        now_utc = datetime.now(timezone.utc)
+
+        # 1. Build the in-radius grid coordinates first, so we only sample cells
+        #    that will actually be rendered.
+        lat_span = radius / 110.574
+        lon_span = radius / (111.320 * max(math.cos(math.radians(latitude)), 0.01))
+
+        grid_points: List[Tuple[float, float]] = []
+        for row in range(resolution):
+            for col in range(resolution):
+                frac_y = (row + 0.5) / resolution
+                frac_x = (col + 0.5) / resolution
+                cell_lat = (latitude - lat_span) + (2 * lat_span * frac_y)
+                cell_lon = (longitude - lon_span) + (2 * lon_span * frac_x)
+                if haversine_distance_km(latitude, longitude, cell_lat, cell_lon) > radius:
+                    continue
+                grid_points.append((cell_lat, cell_lon))
+
+        if not grid_points:
+            return GeoHeatmapResponse(
+                center_location=LocationCoordinate(
+                    latitude=latitude, longitude=longitude, city="Heatmap Center"
+                ),
+                pollutant=metric_label,
+                unit=unit,
+                search_radius_km=radius,
+                grid_resolution=resolution,
+                cells=[],
+                contributing_station_count=0,
+                timestamp=now_utc,
+            )
+
+        # 2. Sample the atmospheric model at each coordinate.
+        from app.providers.open_meteo_provider import OpenMeteoProvider
+        from app.engine.cpcb_aqi import calculate_cpcb_aqi
+
+        model_readings = await OpenMeteoProvider().get_grid_observations(
+            grid_points
+        )
+
+        cells: List[HeatmapCell] = []
+        values: List[float] = []
+
+        for (cell_lat, cell_lon), reading in zip(grid_points, model_readings):
+            if reading is None:
+                continue
+
+            if metric == "AQI":
+                aqi_result = calculate_cpcb_aqi(reading)
+                value = aqi_result.overall_aqi
+                if value is None:
+                    continue
+                value = float(value)
+            elif metric == "PM2.5":
+                value = reading.pm2_5
+            elif metric == "PM10":
+                value = reading.pm10
+            elif metric == "NO2":
+                value = reading.no2
+            elif metric == "SO2":
+                value = reading.so2
+            elif metric == "CO":
+                value = reading.co
+            elif metric == "O3":
+                value = reading.o3
+            else:
+                value = reading.pm2_5
+
+            if value is None or value < 0:
+                continue
+
+            values.append(float(value))
+            cells.append(
+                HeatmapCell(
+                    latitude=round(cell_lat, 5),
+                    longitude=round(cell_lon, 5),
+                    value=round(float(value), 2),
+                    confidence=1.0,
+                )
+            )
+
+        result = GeoHeatmapResponse(
+            center_location=LocationCoordinate(
+                latitude=latitude, longitude=longitude, city="Heatmap Center"
+            ),
+            pollutant=metric_label,
+            unit=unit,
+            search_radius_km=radius,
+            grid_resolution=resolution,
+            cells=cells,
+            min_value=round(min(values), 2) if values else None,
+            max_value=round(max(values), 2) if values else None,
+            contributing_station_count=len(cells),
+            timestamp=now_utc,
+        )
+
+        await cache.set(
+            cache_key, result, ttl_seconds=settings.CACHE_OBSERVATIONS_TTL_SECONDS
+        )
+        return result
 
     async def get_hotspots(
         self,

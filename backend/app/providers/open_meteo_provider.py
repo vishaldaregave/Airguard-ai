@@ -4,7 +4,7 @@ Delivers high-resolution atmospheric chemical transport model data.
 Strict Data Integrity Rule: Classified as ESTIMATED (current model) or FORECAST (future model steps), NEVER LIVE.
 """
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 import httpx
 
@@ -23,6 +23,53 @@ from app.schemas.provider import (
 )
 from app.services.quality import convert_and_validate_pollutant
 from app.services.geo import haversine_distance_km
+
+
+def _local_to_utc(
+    naive_local: datetime,
+    tz_name: Optional[str] = None,
+    utc_offset_seconds: Optional[int] = None,
+) -> datetime:
+    """Converts a station-local naive timestamp to an aware UTC timestamp.
+
+    Open-Meteo is queried with ``timezone=auto``, so returned timestamps are in
+    the station's local time. Treating them as UTC inflates the apparent age of
+    the reading (and can make freshness negative). The IANA zone name is used
+    when available, falling back to the reported UTC offset, then bare UTC.
+    """
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            return naive_local.replace(tzinfo=ZoneInfo(tz_name)).astimezone(
+                timezone.utc
+            )
+        except Exception:
+            pass
+
+    if utc_offset_seconds is not None:
+        return naive_local.replace(
+            tzinfo=timezone(timedelta(seconds=utc_offset_seconds))
+        ).astimezone(timezone.utc)
+
+    return naive_local.replace(tzinfo=timezone.utc)
+
+
+def _to_utc_current(time_value: Optional[str]) -> datetime:
+    """Parses an Open-Meteo ``current.time`` value into an aware UTC datetime.
+
+    These grid requests are issued with ``timezone=UTC``, so a naive value is
+    already UTC and needs no offset correction.
+    """
+    if not time_value:
+        return datetime.now(timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(str(time_value))
+    except ValueError:
+        return datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 class OpenMeteoProvider(BaseAirQualityProvider):
@@ -177,7 +224,10 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                 air_res = await client.get(url)
                 if air_res.status_code != 200:
                     return None
-                air_data = air_res.json().get("current", {})
+                air_payload = air_res.json()
+                air_data = air_payload.get("current", {})
+                station_tz = air_payload.get("timezone")
+                utc_offset_seconds = air_payload.get("utc_offset_seconds")
 
                 # Try weather info
                 temp, hum, wind, press = None, None, None, None
@@ -221,7 +271,11 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                     try:
                         obs_time = datetime.fromisoformat(time_str)
                         if obs_time.tzinfo is None:
-                            obs_time = obs_time.replace(tzinfo=timezone.utc)
+                            # The request uses timezone=auto, so naive timestamps
+                            # are station-local. Convert to UTC so freshness is correct.
+                            obs_time = _local_to_utc(
+                                obs_time, station_tz, utc_offset_seconds
+                            )
                     except ValueError:
                         obs_time = datetime.now(timezone.utc)
                 else:
@@ -252,6 +306,106 @@ class OpenMeteoProvider(BaseAirQualityProvider):
         except Exception:
             return None
 
+    async def get_grid_observations(
+        self,
+        coordinates: List[tuple],
+    ) -> List[Optional[EnvironmentalObservationInput]]:
+        """Samples the atmospheric model at many coordinates in one request.
+
+        The chemical-transport model varies across space, so sampling it on a
+        grid gives each heatmap cell its own value instead of interpolating a
+        single station into a uniform wash.
+
+        Returns a list aligned with ``coordinates``; entries are ``None`` where
+        the model returned no usable reading.
+        """
+        if not coordinates:
+            return []
+
+        results: List[Optional[EnvironmentalObservationInput]] = [None] * len(
+            coordinates
+        )
+
+        # Open-Meteo accepts comma-separated coordinate lists, but keeping each
+        # request modest avoids oversized URLs and truncated responses.
+        chunk_size = 25
+        for start in range(0, len(coordinates), chunk_size):
+            chunk = coordinates[start : start + chunk_size]
+            lats = ",".join(f"{c[0]:.4f}" for c in chunk)
+            lons = ",".join(f"{c[1]:.4f}" for c in chunk)
+
+            url = (
+                f"{settings.OPEN_METEO_AIR_BASE_URL}/air-quality"
+                f"?latitude={lats}&longitude={lons}"
+                "&current=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,"
+                "sulphur_dioxide,ozone"
+                "&timezone=UTC"
+            )
+
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.get(url)
+                    if response.status_code != 200:
+                        continue
+                    payload = response.json()
+            except Exception:
+                continue
+
+            # A multi-coordinate request returns a list; a single one returns an object.
+            entries = payload if isinstance(payload, list) else [payload]
+
+            for offset, entry in enumerate(entries):
+                index = start + offset
+                if index >= len(coordinates) or not isinstance(entry, dict):
+                    continue
+                current = entry.get("current") or {}
+                if not current:
+                    continue
+
+                obs_time = _to_utc_current(current.get("time"))
+
+                pm25, _ = convert_and_validate_pollutant(
+                    PollutantType.PM2_5, current.get("pm2_5"), "µg/m³"
+                )
+                pm10, _ = convert_and_validate_pollutant(
+                    PollutantType.PM10, current.get("pm10"), "µg/m³"
+                )
+                no2, _ = convert_and_validate_pollutant(
+                    PollutantType.NO2, current.get("nitrogen_dioxide"), "µg/m³"
+                )
+                so2, _ = convert_and_validate_pollutant(
+                    PollutantType.SO2, current.get("sulphur_dioxide"), "µg/m³"
+                )
+                co, _ = convert_and_validate_pollutant(
+                    PollutantType.CO, current.get("carbon_monoxide"), "µg/m³"
+                )
+                o3, _ = convert_and_validate_pollutant(
+                    PollutantType.O3, current.get("ozone"), "µg/m³"
+                )
+
+                if all(v is None for v in (pm25, pm10, no2, so2, co, o3)):
+                    continue
+
+                lat, lon = coordinates[index]
+                results[index] = EnvironmentalObservationInput(
+                    station_id=f"METEO-GRID-{lat:.2f}-{lon:.2f}",
+                    station_name=f"Open-Meteo Model Grid ({lat:.2f}, {lon:.2f})",
+                    location=LocationCoordinate(
+                        latitude=lat, longitude=lon, country="Global"
+                    ),
+                    timestamp=obs_time,
+                    provider=self.display_name,
+                    data_source_type=DataSourceType.ESTIMATED,
+                    pm2_5=pm25,
+                    pm10=pm10,
+                    no2=no2,
+                    so2=so2,
+                    co=co,
+                    o3=o3,
+                )
+
+        return results
+
     async def get_historical_observations(
         self, station_id: str, hours: int = 24
     ) -> List[EnvironmentalObservationInput]:
@@ -278,7 +432,10 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                 res = await client.get(url)
                 if res.status_code != 200:
                     return []
-                data = res.json().get("hourly", {})
+                payload = res.json()
+                data = payload.get("hourly", {})
+                station_tz = payload.get("timezone")
+                utc_offset_seconds = payload.get("utc_offset_seconds")
                 times = data.get("time", [])
                 pm25_list = data.get("pm2_5", [])
                 pm10_list = data.get("pm10", [])
@@ -294,14 +451,16 @@ class OpenMeteoProvider(BaseAirQualityProvider):
                         t_iso = times[i]
                         obs_time = datetime.fromisoformat(t_iso)
                         if obs_time.tzinfo is None:
-                            obs_time = obs_time.replace(tzinfo=timezone.utc)
+                            obs_time = _local_to_utc(
+                                obs_time, station_tz, utc_offset_seconds
+                            )
                     except Exception:
                         obs_time = datetime.now(timezone.utc)
 
                     # Strict Provenance Classification:
                     # If obs_time is in the future (> now + 5 min), classify as FORECAST
                     # Otherwise, classify as HISTORICAL
-                    if obs_time > now:
+                    if obs_time > now + timedelta(minutes=5):
                         data_type = DataSourceType.FORECAST
                     else:
                         data_type = DataSourceType.HISTORICAL

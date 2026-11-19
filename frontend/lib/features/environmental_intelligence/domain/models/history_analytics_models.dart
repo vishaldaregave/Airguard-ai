@@ -28,9 +28,10 @@ class HistoricalDataPointModel {
   });
 
   factory HistoricalDataPointModel.fromJson(Map<String, dynamic> json) {
+    final aqi = json['aqi'] ?? json['calculated_aqi'];
     return HistoricalDataPointModel(
       timestamp: DateTime.parse(json['timestamp'] as String),
-      calculatedAqi: json['calculated_aqi'] as int?,
+      calculatedAqi: (aqi as num?)?.toInt(),
       aqiCategory: json['aqi_category'] as String?,
       pm25: (json['pm2_5'] as num?)?.toDouble(),
       pm10: (json['pm10'] as num?)?.toDouble(),
@@ -45,7 +46,7 @@ class HistoricalDataPointModel {
   Map<String, dynamic> toJson() {
     return {
       'timestamp': timestamp.toIso8601String(),
-      'calculated_aqi': calculatedAqi,
+      'aqi': calculatedAqi,
       'aqi_category': aqiCategory,
       'pm2_5': pm25,
       'pm10': pm10,
@@ -74,18 +75,21 @@ class DataGapModel {
   });
 
   factory DataGapModel.fromJson(Map<String, dynamic> json) {
+    final start = json['start_time'] ?? json['gap_start'];
+    final end = json['end_time'] ?? json['gap_end'];
     return DataGapModel(
-      gapStart: DateTime.parse(json['gap_start'] as String),
-      gapEnd: DateTime.parse(json['gap_end'] as String),
+      gapStart: DateTime.parse(start as String),
+      gapEnd: DateTime.parse(end as String),
       durationHours: (json['duration_hours'] as num).toDouble(),
-      expectedIntervalHours: (json['expected_interval_hours'] as num? ?? 1.0).toDouble(),
+      expectedIntervalHours:
+          (json['expected_interval_hours'] as num? ?? 1.0).toDouble(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'gap_start': gapStart.toIso8601String(),
-      'gap_end': gapEnd.toIso8601String(),
+      'start_time': gapStart.toIso8601String(),
+      'end_time': gapEnd.toIso8601String(),
       'duration_hours': durationHours,
       'expected_interval_hours': expectedIntervalHours,
     };
@@ -135,7 +139,7 @@ class PollutantTrendModel {
       median: (json['median'] as num?)?.toDouble(),
       minValue: (json['min_value'] as num?)?.toDouble(),
       maxValue: (json['max_value'] as num?)?.toDouble(),
-      stdDev: (json['std_dev'] as num?)?.toDouble(),
+      stdDev: ((json['standard_deviation'] ?? json['std_dev']) as num?)?.toDouble(),
       slopePerDay: (json['slope_per_day'] as num?)?.toDouble(),
       trend: json['trend'] as String? ?? 'STABLE',
       rSquared: (json['r_squared'] as num?)?.toDouble(),
@@ -155,6 +159,7 @@ class PollutantTrendModel {
       'min_value': minValue,
       'max_value': maxValue,
       'std_dev': stdDev,
+      'standard_deviation': stdDev,
       'slope_per_day': slopePerDay,
       'trend': trend,
       'r_squared': rSquared,
@@ -224,6 +229,8 @@ class HistoricalSummaryModel {
   final String provider;
   final String dataSourceType;
   final bool isPhysicalStation;
+  final double latitude;
+  final double longitude;
   final String period;
   final DateTime startTime;
   final DateTime endTime;
@@ -239,6 +246,7 @@ class HistoricalSummaryModel {
   final String overallTrend;
   final Map<String, int> aqiCategoryDistribution;
   final Map<String, PollutantTrendModel> pollutantSummaries;
+  final String methodologyNotes;
   final String disclaimer;
 
   const HistoricalSummaryModel({
@@ -247,6 +255,8 @@ class HistoricalSummaryModel {
     required this.provider,
     required this.dataSourceType,
     required this.isPhysicalStation,
+    this.latitude = 0.0,
+    this.longitude = 0.0,
     required this.period,
     required this.startTime,
     required this.endTime,
@@ -262,6 +272,7 @@ class HistoricalSummaryModel {
     this.overallTrend = 'STABLE',
     this.aqiCategoryDistribution = const {},
     this.pollutantSummaries = const {},
+    this.methodologyNotes = '',
     required this.disclaimer,
   });
 
@@ -280,6 +291,8 @@ class HistoricalSummaryModel {
       provider: json['provider'] as String,
       dataSourceType: json['data_source_type'] as String,
       isPhysicalStation: json['is_physical_station'] as bool? ?? true,
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       period: json['period'] as String,
       startTime: DateTime.parse(json['start_time'] as String),
       endTime: DateTime.parse(json['end_time'] as String),
@@ -295,6 +308,7 @@ class HistoricalSummaryModel {
       overallTrend: json['overall_trend'] as String? ?? 'STABLE',
       aqiCategoryDistribution: catDist,
       pollutantSummaries: pollSum,
+      methodologyNotes: json['methodology_notes'] as String? ?? '',
       disclaimer: json['disclaimer'] as String? ?? '',
     );
   }
@@ -342,25 +356,32 @@ class HistoricalTrendsModel {
       (k, v) => MapEntry(k, PollutantTrendModel.fromJson(v as Map<String, dynamic>)),
     );
 
-    final gapsRaw = json['detected_gaps'] as List<dynamic>? ?? [];
+    final gapsRaw = (json['data_gaps'] ?? json['detected_gaps']) as List<dynamic>? ?? [];
     final gaps = gapsRaw.map((g) => DataGapModel.fromJson(g as Map<String, dynamic>)).toList();
 
-    final tsRaw = json['timeseries'] as List<dynamic>? ?? [];
+    final tsRaw = (json['time_points'] ?? json['timeseries']) as List<dynamic>? ?? [];
     final ts = tsRaw.map((t) => HistoricalDataPointModel.fromJson(t as Map<String, dynamic>)).toList();
 
     return HistoricalTrendsModel(
       stationId: json['station_id'] as String,
       period: json['period'] as String,
-      datapointsCount: json['datapoints_count'] as int? ?? 0,
-      overallTrend: json['overall_trend'] as String? ?? 'STABLE',
+      datapointsCount:
+          (json['sample_count'] ?? json['datapoints_count'] as int?) ?? 0,
+      overallTrend:
+          (json['trend_direction'] ?? json['overall_trend']) as String? ??
+              'STABLE',
       slopeAqiPerDay: (json['slope_aqi_per_day'] as num?)?.toDouble(),
       rSquared: (json['r_squared'] as num?)?.toDouble(),
-      isStatisticallySignificant: json['is_statistically_significant'] as bool? ?? false,
+      isStatisticallySignificant:
+          (json['p_value_significant'] ?? json['is_statistically_significant'])
+                  as bool? ??
+              false,
       diurnalProfile: diurnal,
       pollutantTrends: pollTrends,
       detectedGaps: gaps,
       timeseries: ts,
-      disclaimer: json['disclaimer'] as String? ?? '',
+      disclaimer:
+          (json['methodology_notes'] ?? json['disclaimer']) as String? ?? '',
     );
   }
 }

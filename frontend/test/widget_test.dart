@@ -276,9 +276,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // Verify app title and environmental intelligence branding
-    expect(find.text('AIRGUARD AI'), findsOneWidget);
-    expect(find.text('ENVIRONMENTAL INTELLIGENCE'), findsOneWidget);
+    // Verify the app title
+    expect(find.text('AirGuard'), findsOneWidget);
 
     // Verify station name and AQI display
     expect(find.textContaining('Test Monitoring Station'), findsWidgets);
